@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app/kg/discovery_extractor.py)",
+      "Bash(python -m py_compile app/kg/schema_inducer.py)",
+      "Bash(python -m py_compile app/scripts/run_discovery.py)",
+      "Bash(python -m py_compile app/scripts/run_schema_induction.py)",
+      "Bash(python -m py_compile app/kg/legal_extractor.py)",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
+    ]
+  }
+}
