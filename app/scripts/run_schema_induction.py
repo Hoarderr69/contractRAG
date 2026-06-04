@@ -9,8 +9,8 @@ Usage:
 
   python -m app.scripts.run_schema_induction
 
-  # Custom similarity threshold (default 0.82, lower = bigger clusters):
-  python -m app.scripts.run_schema_induction --threshold 0.78
+  # Custom similarity threshold (default 0.72, lower = bigger clusters):
+  python -m app.scripts.run_schema_induction --threshold 0.65
 
   # Custom input/output paths:
   python -m app.scripts.run_schema_induction \
@@ -49,12 +49,12 @@ def main():
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.82,
+        default=0.72,
         help=(
-            "Cosine similarity threshold for clustering (default: 0.82). "
+            "Cosine similarity threshold for clustering (default: 0.72). "
             "Lower = more aggressive merging. "
-            "0.85+ = conservative (keeps more distinct types). "
-            "0.75- = aggressive (merges more, fewer canonical types)."
+            "0.82+ = conservative (keeps more distinct types). "
+            "0.70- = aggressive (merges more, fewer canonical types)."
         ),
     )
 
