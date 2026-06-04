@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Send, ChevronDown, ChevronUp,
-  FileText, Copy, Check, Bot, User, ArrowRight,
+  FileText, Copy, Check, Bot, User, ArrowRight, Menu,
 } from 'lucide-react'
 import type { Message, Citation, ChatSession, Contract } from '../types'
 
@@ -389,7 +389,7 @@ function ChatInput({
   }
 
   return (
-    <div className="border-t border-ey-border bg-ey-dark px-4 py-4">
+    <div className="border-t border-ey-border bg-ey-dark px-3 md:px-4 py-3 md:py-4">
       {/* Scope pill */}
       <div className="flex items-center gap-2 mb-2">
         <div className="flex items-center gap-1.5 px-2 py-1 bg-ey-surface rounded">
@@ -439,10 +439,11 @@ interface ChatAreaProps {
   contractFilter: string | null
   isLoading: boolean
   onSendMessage: (text: string) => void
+  onOpenMobileSidebar: () => void
 }
 
 export default function ChatArea({
-  session, contracts, contractFilter, isLoading, onSendMessage,
+  session, contracts, contractFilter, isLoading, onSendMessage, onOpenMobileSidebar,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -453,7 +454,6 @@ export default function ChatArea({
   const showWelcome = !session || session.messages.length === 0
   const messages = session?.messages ?? []
 
-  // Find the index of the last assistant message
   let lastAssistantIdx = -1
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'assistant') { lastAssistantIdx = i; break }
@@ -463,13 +463,22 @@ export default function ChatArea({
     <div className="flex-1 flex flex-col h-full min-w-0 bg-ey-darker">
 
       {/* ── Header ── */}
-      <div className="flex items-center px-6 py-4 border-b border-ey-border bg-ey-dark flex-shrink-0">
-        <div>
-          <h2 className="text-sm font-semibold text-white">
+      <div className="flex items-center gap-3 px-4 md:px-6 py-4 border-b border-ey-border bg-ey-dark flex-shrink-0">
+        {/* Mobile hamburger */}
+        <button
+          onClick={onOpenMobileSidebar}
+          className="md:hidden w-8 h-8 flex items-center justify-center rounded
+                     text-ey-muted hover:text-white hover:bg-ey-surface transition-colors flex-shrink-0"
+        >
+          <Menu size={18} />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold text-white truncate">
             {session ? session.title : 'New Conversation'}
           </h2>
           {session && session.contractFilter && (
-            <p className="text-[11px] text-ey-muted mt-0.5">
+            <p className="text-[11px] text-ey-muted mt-0.5 truncate">
               {contracts.find(c => c.id === session.contractFilter)?.displayName ?? session.contractFilter}
             </p>
           )}
@@ -481,7 +490,7 @@ export default function ChatArea({
         {showWelcome ? (
           <WelcomeScreen contractFilter={contractFilter} contracts={contracts} />
         ) : (
-          <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+          <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
             {messages.map((msg, idx) => (
               <MessageBubble
                 key={msg.id}
