@@ -169,68 +169,128 @@ def cluster_by_similarity(
 
 
 # ---------------------------------------------------------------------------
-# Step 3: LLM canonicalization — pick the best legal name per cluster
+# Step 3: Canonicalization — frequency-first, single batched LLM polish
 # ---------------------------------------------------------------------------
 
-CANONICALIZE_SYSTEM = """You are a legal ontology expert specializing in contract law.
-Given a group of synonymous or near-synonymous legal terms extracted from contracts,
-propose the single best canonical name that:
-1. Is precise legal terminology
-2. Is general enough to apply across different contract types
-3. Uses PascalCase (e.g. ObligatingParty, CurePeriod, LiquidatedDamagesClause)
+def to_pascal_case(name: str) -> str:
+    """Convert 'cure period' or 'Cure Period' → 'CurePeriod'."""
+    words = re.sub(r"[^a-zA-Z0-9 ]+", " ", name).split()
+    return "".join(w.capitalize() for w in words if w)
 
-Return JSON only."""
+
+BATCH_CANONICALIZE_SYSTEM = """You are a legal ontology expert specializing in contract law.
+You will receive a JSON list of term groups. Each group has a "representative" name and
+optional "aliases" (synonyms from the same semantic cluster).
+
+For each group, return the single best canonical PascalCase legal ontology name and a
+one-sentence definition. Preserve legal precision — do not over-generalise.
+
+Return a JSON array in the same order:
+[{"canonical": "CurePeriod", "definition": "..."}, ...]"""
 
 
 def canonicalize_clusters(
     entity_clusters: List[List[str]],
     rel_clusters: List[List[str]],
     client: AzureOpenAI,
+    type_to_contracts_entity: Optional[Dict[str, List[str]]] = None,
+    type_to_contracts_rel: Optional[Dict[str, List[str]]] = None,
 ) -> Tuple[List[Dict], List[Dict]]:
     """
-    Ask LLM to pick the best canonical name for each cluster.
-    Returns entity_proposals and relationship_proposals.
+    Two-step canonicalization:
+      1. For each cluster pick the most-frequent raw variant as representative
+         (zero LLM calls for single-item clusters).
+      2. For multi-item clusters only, send ONE batched LLM call per 50 clusters
+         to get proper PascalCase legal names.
     """
 
-    def canonicalize_batch(clusters: List[List[str]], kind: str) -> List[Dict]:
-        proposals = []
+    def pick_representative(cluster: List[str], freq_map: Optional[Dict[str, List[str]]]) -> str:
+        """Pick the variant that appears in the most contracts; break ties by length."""
+        if len(cluster) == 1:
+            return cluster[0]
+        if freq_map:
+            return max(cluster, key=lambda t: (len(set(freq_map.get(t, []))), -len(t)))
+        return max(cluster, key=lambda t: -len(t))  # shortest if no freq data
 
-        for cluster in clusters:
-            if len(cluster) == 1:
-                # No ambiguity — still ask LLM to normalize to PascalCase legal term
-                raw = cluster[0]
-                prompt = f"""Single {kind} term from legal contracts: "{raw}"
-Propose the best canonical PascalCase legal ontology name for this.
-Return: {{"canonical": "...", "definition": "one sentence legal definition"}}"""
-            else:
-                terms_str = json.dumps(cluster, indent=2)
-                prompt = f"""These {kind} terms were extracted from legal contracts and appear to be synonymous:
-{terms_str}
+    def batch_llm_polish(
+        clusters_with_rep: List[Tuple[List[str], str]],
+        kind: str,
+    ) -> List[Dict]:
+        """
+        Send groups to LLM in batches of 50.
+        Only clusters with 2+ members get sent; single-item clusters
+        are just PascalCase-converted locally.
+        """
+        proposals: List[Optional[Dict]] = [None] * len(clusters_with_rep)
 
-Propose the single best canonical PascalCase legal ontology name that covers all of them.
-Return: {{"canonical": "...", "definition": "one sentence legal definition", "aliases": [...]}}"""
+        # Separate: single-item (no LLM) vs multi-item (needs LLM)
+        single_indices = [i for i, (cl, _) in enumerate(clusters_with_rep) if len(cl) == 1]
+        multi_indices  = [i for i, (cl, _) in enumerate(clusters_with_rep) if len(cl) > 1]
 
-            response = client.chat.completions.create(
-                model=config.AZURE_OPENAI_CHAT_DEPLOYMENT,
-                temperature=0,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": CANONICALIZE_SYSTEM},
-                    {"role": "user", "content": prompt},
-                ],
+        # Single-item: local PascalCase, no definition needed yet
+        for i in single_indices:
+            cluster, rep = clusters_with_rep[i]
+            proposals[i] = {
+                "canonical": to_pascal_case(rep),
+                "definition": "",
+                "raw_variants": cluster,
+            }
+
+        # Multi-item: batch LLM call in groups of 50
+        batch_size = 50
+        for batch_start in range(0, len(multi_indices), batch_size):
+            batch_idx = multi_indices[batch_start : batch_start + batch_size]
+            payload = [
+                {
+                    "representative": clusters_with_rep[i][1],
+                    "aliases": [v for v in clusters_with_rep[i][0] if v != clusters_with_rep[i][1]],
+                }
+                for i in batch_idx
+            ]
+
+            prompt = (
+                f"These are {kind} term groups from legal contracts. "
+                f"Return a JSON array of {len(payload)} objects.\n\n"
+                + json.dumps(payload, indent=2)
             )
 
-            result = json.loads(response.choices[0].message.content)
-            result["raw_variants"] = cluster
-            proposals.append(result)
+            try:
+                response = client.chat.completions.create(
+                    model=config.AZURE_OPENAI_CHAT_DEPLOYMENT,
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": BATCH_CANONICALIZE_SYSTEM},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                content = json.loads(response.choices[0].message.content)
+                # LLM may return {"items": [...]} or just [...]
+                items = content if isinstance(content, list) else content.get("items", content.get("results", []))
+            except Exception as e:
+                print(f"  [warn] LLM batch failed ({e}), falling back to local PascalCase")
+                items = []
 
-        return proposals
+            for k, orig_i in enumerate(batch_idx):
+                cluster, rep = clusters_with_rep[orig_i]
+                item = items[k] if k < len(items) else {}
+                proposals[orig_i] = {
+                    "canonical": item.get("canonical") or to_pascal_case(rep),
+                    "definition": item.get("definition", ""),
+                    "raw_variants": cluster,
+                }
 
-    print(f"Canonicalizing {len(entity_clusters)} entity clusters...")
-    entity_proposals = canonicalize_batch(entity_clusters, "entity")
+        return [p for p in proposals if p is not None]
 
-    print(f"Canonicalizing {len(rel_clusters)} relationship clusters...")
-    rel_proposals = canonicalize_batch(rel_clusters, "relationship")
+    print(f"Canonicalizing {len(entity_clusters)} entity clusters "
+          f"({sum(1 for c in entity_clusters if len(c) > 1)} need LLM)...")
+    ent_pairs = [(cl, pick_representative(cl, type_to_contracts_entity)) for cl in entity_clusters]
+    entity_proposals = batch_llm_polish(ent_pairs, "entity")
+
+    print(f"Canonicalizing {len(rel_clusters)} relationship clusters "
+          f"({sum(1 for c in rel_clusters if len(c) > 1)} need LLM)...")
+    rel_pairs = [(cl, pick_representative(cl, type_to_contracts_rel)) for cl in rel_clusters]
+    rel_proposals = batch_llm_polish(rel_pairs, "relationship")
 
     return entity_proposals, rel_proposals
 
@@ -345,10 +405,10 @@ def build_ontology_proposal(
         "metadata": {
             "total_contracts_analyzed": total_contracts,
             "total_raw_entity_types": sum(
-                len(ep["aliases"]) for ep in entity_proposals
+                len(ep.get("aliases", ep.get("raw_variants", []))) for ep in entity_proposals
             ),
             "total_raw_rel_types": sum(
-                len(rp["aliases"]) for rp in rel_proposals
+                len(rp.get("aliases", rp.get("raw_variants", []))) for rp in rel_proposals
             ),
             "canonical_entity_types": len(entity_proposals),
             "canonical_rel_types": len(rel_proposals),
@@ -373,7 +433,7 @@ def build_ontology_proposal(
 def run_schema_induction(
     discovery_dir: Path,
     output_path: Optional[Path] = None,
-    similarity_threshold: float = 0.82,
+    similarity_threshold: float = 0.72,
 ) -> Dict[str, Any]:
     """
     Full Stage 2 pipeline:
@@ -426,9 +486,11 @@ def run_schema_induction(
     print(f"Entity clusters: {len(entity_clusters)} (from {len(entity_type_names)} raw types)")
     print(f"Relationship clusters: {len(rel_clusters)} (from {len(rel_type_names)} raw types)")
 
-    # Step 5: Canonicalize via LLM
+    # Step 5: Canonicalize via LLM (batched, single-items handled locally)
     entity_proposals, rel_proposals = canonicalize_clusters(
-        entity_clusters, rel_clusters, client
+        entity_clusters, rel_clusters, client,
+        type_to_contracts_entity=entity_type_to_contracts,
+        type_to_contracts_rel=rel_type_to_contracts,
     )
 
     # Step 6: Frequency scoring
