@@ -54,6 +54,7 @@ LEGAL_NODE_TYPES = [
 
 LEGAL_RELATIONSHIP_TYPES = [
     # Layer 1 — Universal
+    "IMPOSES_OBLIGATION_ON",
     "INDEMNIFIES",
     "CAPS_LIABILITY_OF",
     "GIVES_NOTICE_TO",
@@ -109,58 +110,56 @@ class LegalLLMExtractor:
         )
 
     def build_prompt(self, clause: KGNode) -> str:
+        node_types_str = "\n".join(f"  - {t}" for t in LEGAL_NODE_TYPES)
+        rel_types_str = "\n".join(f"  - {t}" for t in LEGAL_RELATIONSHIP_TYPES)
+
         return f"""
 You are a legal contract knowledge graph extraction expert.
 
 Extract legal-semantic entities and relationships from the clause below.
+Use ONLY the allowed types listed. Do not invent new types.
 
-Allowed entity types:
-{LEGAL_NODE_TYPES}
+ALLOWED ENTITY TYPES:
+{node_types_str}
 
-Allowed relationship types:
-{LEGAL_RELATIONSHIP_TYPES}
+ALLOWED RELATIONSHIP TYPES:
+{rel_types_str}
 
-Rules:
-1. Extract only information explicitly supported by the text.
-2. Every entity must have a stable id.
-3. Every relationship source_id and target_id must refer to extracted entity ids or the source clause id.
+EXTRACTION RULES:
+1. Extract only information explicitly supported by the text. Do not hallucinate.
+2. Every entity id must be stable and deterministic: format "<type_lowercase>:<contract_id>:<slug_of_name>"
+3. Every relationship source_id and target_id must refer to an extracted entity id OR the source clause id.
 4. The source clause id is: {clause.kgId}
-5. Include confidence from 0 to 1.
-6. Include exact evidence quote where possible.
-7. If the clause imposes a duty, create an Obligation.
-8. If the clause gives permission or entitlement, create a Right.
-9. If the clause forbids conduct, create a Restriction.
-10. Extract deadlines, notice periods, frequency, systems, assets, events, and risk signals if present.
-11. Do not hallucinate missing parties or dates.
-12. Return valid JSON only.
-13. For every Obligation, if the obligated party is stated or clearly implied, create a Party entity and an OWED_BY relationship from the Obligation to the Party.
-14. For every Obligation, if the beneficiary or recipient party is stated, create a Party entity and an OWED_TO relationship from the Obligation to the Party.
-15. If a deadline is present, create a Deadline entity and a HAS_DEADLINE relationship from the Obligation to the Deadline.
-16. If a notice period is present, create a NoticePeriod entity and a HAS_NOTICE_PERIOD relationship from the Obligation or Right to the NoticePeriod.
-17. If a recurring frequency is present, create a Frequency entity and a HAS_FREQUENCY relationship.
-18. If a condition is present, create a Condition entity and a SUBJECT_TO relationship.
-19. If an exception is present, create an Exception entity and an EXCEPTS relationship.
-20. If a triggering event is present, create an Event entity and a TRIGGERED_BY relationship.
-21. Do not create duplicate Party entities within one clause.
-22. Prefer normalized party names: "Con Edison", "Power Authority", "Either Party", "Party".
-23. Use deterministic IDs based on source clause id and normalized entity name.
+5. Confidence is a float 0.0–1.0 reflecting how explicitly the text supports this extraction.
+6. evidenceQuote must be a verbatim excerpt from the clause text (max 200 chars). Use null if none.
+7. Do not create duplicate entities for the same real-world party or concept within one clause.
+8. Normalize party names to their contract-defined role (e.g. "Contractor", "Owner", "Either Party") — do not use document-specific company names.
+9. If the clause imposes a duty or obligation on a party, create an Obligation entity and an IMPOSES_OBLIGATION_ON relationship from the clause to that obligation.
+10. If the clause identifies a party bearing the obligation, create that party as an Obligor and link: Obligor --TRIGGERS_OBLIGATION_OF--> Obligation.
+11. If the clause identifies the party receiving the benefit, create that party as an Obligee and link: Obligation --OBLIGATES--> Obligee.
+12. If the clause contains an indemnification, create Indemnitor and Indemnitee entities and an INDEMNIFIES relationship.
+13. If the clause caps or limits liability, create a Liability entity and a CAPS_LIABILITY_OF relationship.
+14. If the clause references a force majeure event, create a ForceMajeureEvent entity.
+15. If the clause defines a cure period, create a CurePeriod entity and a TRIGGERS_CURE_PERIOD_OF relationship from the triggering event to it.
+16. If the clause contains a notice requirement, create a Notice entity with a GIVES_NOTICE_TO or PROVIDES_NOTICE_TO relationship.
+17. If the clause concerns confidential information, create a ConfidentialInformation entity.
+18. If the clause grants a termination right, create a TerminationRight and a TerminationEvent entity where applicable.
+19. Store deadline values, notice periods, and monetary caps as properties on the relevant entity (e.g. {{"days": 30, "unit": "calendar days"}}), not as separate entity types.
+20. Return valid JSON only — no prose, no markdown fences.
 
-
-
+CONTRACT CONTEXT:
 Contract ID: {clause.contractId}
 Clause ID: {clause.kgId}
 Clause title: {clause.title}
 Clause type hint: {clause.clauseTypeHint}
-Page start: {clause.pageStart}
-Page end: {clause.pageEnd}
-Source path: {clause.sourcePath}
+Pages: {clause.pageStart}–{clause.pageEnd}
 
-Clause text:
+CLAUSE TEXT:
 \"\"\"
 {clause.text}
 \"\"\"
 
-Return JSON in this exact shape:
+Return JSON in exactly this shape:
 {{
   "source_clause_id": "{clause.kgId}",
   "source_clause_title": "{clause.title}",
@@ -168,22 +167,22 @@ Return JSON in this exact shape:
   "source_page_end": {clause.pageEnd},
   "entities": [
     {{
-      "id": "obligation:<contract_id>:<short_slug>",
+      "id": "obligation:{clause.contractId}:example_slug",
       "type": "Obligation",
-      "name": "...",
-      "properties": {{}},
-      "confidence": 0.0,
-      "evidenceQuote": "..."
+      "name": "Short descriptive name",
+      "properties": {{"deadline_days": 30}},
+      "confidence": 0.9,
+      "evidenceQuote": "verbatim excerpt from the clause text"
     }}
   ],
   "relationships": [
     {{
       "source_id": "{clause.kgId}",
-      "target_id": "obligation:<contract_id>:<short_slug>",
-      "type": "IMPOSES_OBLIGATION",
+      "target_id": "obligation:{clause.contractId}:example_slug",
+      "type": "IMPOSES_OBLIGATION_ON",
       "properties": {{}},
-      "confidence": 0.0,
-      "evidenceQuote": "..."
+      "confidence": 0.9,
+      "evidenceQuote": "verbatim excerpt from the clause text"
     }}
   ]
 }}
