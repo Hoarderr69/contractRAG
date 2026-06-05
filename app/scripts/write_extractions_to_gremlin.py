@@ -31,8 +31,8 @@ def main():
     parser.add_argument(
         "--delay",
         type=float,
-        default=1.0,
-        help="Seconds to sleep between clauses (default 1.0 — safe for 1000 RU free tier)",
+        default=0.0,
+        help="Seconds to sleep between clauses (default 0 — retries handle throttling automatically)",
     )
     parser.add_argument(
         "--tenant-id",
