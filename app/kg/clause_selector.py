@@ -80,7 +80,7 @@ def score_clause(node: KGNode) -> int:
 
 def select_representative_clauses(
     nodes: List[KGNode],
-    limit: int = 20,
+    limit: int = None,
 ) -> List[KGNode]:
     candidates = []
 
@@ -95,4 +95,4 @@ def select_representative_clauses(
 
     ranked = sorted(candidates, key=score_clause, reverse=True)
 
-    return ranked[:limit]
+    return ranked[:limit] if limit else ranked
