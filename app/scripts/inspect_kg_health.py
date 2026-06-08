@@ -25,8 +25,17 @@ Nothing is written. Read-only.
 from collections import defaultdict
 from typing import Any, Dict, List
 
-from app.kg.gremlin_writer import GremlinWriter, gremlin_is_configured
+from app.kg.gremlin_writer import GremlinWriter
 from app.rag.graph_retriever import PARTY_LABELS, first_value
+
+
+def gremlin_is_configured() -> bool:
+    from app import config
+    return all([
+        getattr(config, "GREMLIN_ENDPOINT", None),
+        getattr(config, "GREMLIN_USERNAME", None),
+        getattr(config, "GREMLIN_PASSWORD", None),
+    ])
 
 
 def _v(prop_map: Dict[str, Any], key: str):

@@ -51,6 +51,20 @@ def _tenant():
         return "default"
 
 
+def _gremlin_configured() -> bool:
+    """Self-contained config check (avoids importing helpers that may not exist
+    in every machine's gremlin_writer.py version)."""
+    try:
+        from app import config
+        return all([
+            getattr(config, "GREMLIN_ENDPOINT", None),
+            getattr(config, "GREMLIN_USERNAME", None),
+            getattr(config, "GREMLIN_PASSWORD", None),
+        ])
+    except Exception:
+        return False
+
+
 def _drop_batched(writer, gremlin_match: str, label: str, batch: int, delay: float):
     """
     Drop vertices/edges in small batches to stay within the RU budget.
@@ -113,6 +127,23 @@ def main():
     tenant = args.tenant_id or _tenant()
     only = [args.contract] if args.contract else None
 
+    # ── Locate inputs (fail loudly instead of writing 0) ────────────────
+    from pathlib import Path
+    ex_dir = Path(args.extractions_dir)
+    found = sorted(p.stem.replace("_legal_extractions", "")
+                   for p in ex_dir.glob("*_legal_extractions.json"))
+    if not found:
+        print(f"\n  ERROR: no '*_legal_extractions.json' files in {ex_dir.resolve()}")
+        print("  Pass the right path with --extractions-dir, e.g.")
+        print("    --extractions-dir C:\\Users\\WW773GE\\Downloads\\demo1\\rag_system_for_contracts\\data\\kg\\extractions")
+        sys.exit(1)
+    if args.contract and args.contract not in found:
+        print(f"\n  ERROR: --contract '{args.contract}' not found in {ex_dir.resolve()}")
+        print(f"  Available contract ids ({len(found)}):")
+        for c in found:
+            print(f"    {c}")
+        sys.exit(1)
+
     # ── Pipeline (no Gremlin needed) ────────────────────────────────────
     g = run_pipeline(args.extractions_dir, tenant_id=tenant, only_contracts=only)
     sem_edges, res_edges, skipped = validate_edges(g)
@@ -152,8 +183,8 @@ def main():
             return
 
     # ── Write ───────────────────────────────────────────────────────────
-    from app.kg.gremlin_writer import GremlinWriter, gremlin_is_configured
-    if not gremlin_is_configured():
+    from app.kg.gremlin_writer import GremlinWriter
+    if not _gremlin_configured():
         print("\n  ERROR: Gremlin not configured (GREMLIN_ENDPOINT/USERNAME/PASSWORD).")
         sys.exit(1)
 

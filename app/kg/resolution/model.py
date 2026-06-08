@@ -47,6 +47,7 @@ class Node:
     # provenance / citation
     sourceClauseId: Optional[str] = None
     clauseTitle: Optional[str] = None
+    sectionTitle: Optional[str] = None
     pageStart: Optional[int] = None
     pageEnd: Optional[int] = None
     sourcePath: Optional[str] = None
