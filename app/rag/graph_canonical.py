@@ -181,15 +181,17 @@ def canonical_graph_retrieve(
     contract_id: Optional[str] = None,
     contract_ids: Optional[List[str]] = None,
     search_anchor_fn=None,
-) -> str:
+):
     """
-    Smart graph retrieval. Returns a serialized, bounded context string, or ""
-    if nothing was found (caller can then fall back to the legacy retriever).
+    Smart graph retrieval. Returns (context_str, facts) where `facts` is the list
+    of structured fact dicts (with clauseTitle/pageStart/contractId/evidenceQuote)
+    so the caller can build real citations. Returns ("", []) if nothing found.
 
     search_anchor_fn(question, scope) -> List[clause_id]  (Phase-2 bridge; optional)
     """
     scope = list(contract_ids) if contract_ids else ([contract_id] if contract_id else None)
     r = CanonicalGraphRetriever()
+    all_facts: List[Dict] = []
     try:
         linked = r.link_entities(question)
         blocks: List[str] = []
@@ -207,9 +209,11 @@ def canonical_graph_retrieve(
                 if owed_by:
                     header.append(f"Obligations owed BY {c['name']} ({len(owed_by)}):")
                     header += _fmt(owed_by)
+                    all_facts += owed_by
                 if owed_to:
                     header.append(f"Obligations owed TO {c['name']} ({len(owed_to)}):")
                     header += _fmt(owed_to)
+                    all_facts += owed_to
                 if owed_by or owed_to:
                     blocks.append("\n".join(header))
 
@@ -222,10 +226,11 @@ def canonical_graph_retrieve(
                     "=" * 70 + "\nGRAPH FACTS (anchored on relevant clauses)\n" + "=" * 70
                     + "\n" + "\n".join(_fmt(facts))
                 )
+                all_facts += facts
 
-        return "\n\n".join(blocks)
+        return "\n\n".join(blocks), all_facts
     except Exception as exc:
         logger.warning("canonical_graph_retrieve failed (%s) — caller should fall back.", exc)
-        return ""
+        return "", []
     finally:
         r.close()

@@ -189,30 +189,25 @@ def _hybrid_retrieve(
     for c in tree_citations:
         c["route"] = "hybrid"
 
-    graph_context = _graph_retrieve(
+    graph_context, graph_facts = _graph_retrieve(
         question=question,
         contract_id=contract_id,
         contract_ids=contract_ids,
     )
 
-    # Append one graph citation per contract in scope
-    scope_ids = contract_ids or ([contract_id] if contract_id else [])
-    seen_ids = {c["contractId"] for c in tree_citations}
-    graph_citations = [
-        {
-            "id":            cid,
-            "contractId":    cid,
-            "contractName":  cid.replace("_", " "),
-            "clauseTitle":   "Knowledge Graph",
-            "sectionTitle":  "",
-            "pageRange":     "",
-            "sourcePath":    "",
-            "evidenceQuote": "",
-            "route":         "graph",
-            "score":         1.0,
-        }
-        for cid in scope_ids if cid not in seen_ids
-    ]
+    # Prefer fact-level graph citations; fall back to scope cards if none.
+    graph_citations = _graph_facts_to_citations(graph_facts)
+    if not graph_citations:
+        scope_ids = contract_ids or ([contract_id] if contract_id else [])
+        seen_ids = {c["contractId"] for c in tree_citations}
+        graph_citations = [
+            {
+                "id": cid, "contractId": cid, "contractName": cid.replace("_", " "),
+                "clauseTitle": "Knowledge Graph", "sectionTitle": "", "pageRange": "",
+                "sourcePath": "", "evidenceQuote": "", "route": "graph", "score": 1.0,
+            }
+            for cid in scope_ids if cid not in seen_ids
+        ]
 
     combined = (
         "=" * 80 + "\n"
@@ -242,17 +237,45 @@ def _make_search_anchor():
     return _anchor
 
 
+def _graph_facts_to_citations(facts: List[Dict]) -> List[Dict]:
+    """Build citation cards from graph facts (with page/clause provenance)."""
+    citations, seen = [], set()
+    for f in facts:
+        cid = f.get("contractId") or ""
+        title = f.get("clauseTitle") or f.get("name") or ""
+        ps, pe = f.get("pageStart"), f.get("pageEnd")
+        key = f"{cid}|{title}|{ps}"
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append({
+            "id":            f.get("kgId") or key,
+            "contractId":    cid,
+            "contractName":  cid.replace("_", " "),
+            "clauseTitle":   title,
+            "sectionTitle":  "",
+            "pageRange":     f"{ps}–{pe}" if ps else "",
+            "sourcePath":    "",
+            "evidenceQuote": (f.get("evidenceQuote") or "")[:200],
+            "route":         "graph",
+            "score":         1.0,
+        })
+    return citations
+
+
 def _graph_retrieve(question: str, contract_id: Optional[str],
-                    contract_ids: Optional[List[str]]) -> str:
+                    contract_ids: Optional[List[str]]):
     """Smart canonical-anchored graph retrieval, falling back to the legacy
-    template retriever when it finds nothing."""
-    ctx = canonical_graph_retrieve(
+    template retriever when it finds nothing.
+    Returns (context_str, citations)."""
+    ctx, facts = canonical_graph_retrieve(
         question, contract_id=contract_id, contract_ids=contract_ids,
         search_anchor_fn=_make_search_anchor(),
     )
     if ctx and ctx.strip():
-        return ctx
-    return graph_native_retrieve(question, contract_id=contract_id, contract_ids=contract_ids)
+        return ctx, _graph_facts_to_citations(facts)
+    legacy = graph_native_retrieve(question, contract_id=contract_id, contract_ids=contract_ids)
+    return legacy, []
 
 
 def _graph_available(contract_id: Optional[str], contract_ids: Optional[List[str]]) -> bool:
@@ -360,28 +383,23 @@ def answer_question(
     citations: List[Dict] = []
 
     if route == "graph":
-        context = _graph_retrieve(
+        context, citations = _graph_retrieve(
             rewritten_query,
             contract_id=contract_id,
             contract_ids=contract_ids,
         )
-        # Graph citations: derive from active contract scope (no chunk scores)
-        scope_ids = contract_ids or ([contract_id] if contract_id else [])
-        citations = [
-            {
-                "id":            cid,
-                "contractId":    cid,
-                "contractName":  cid.replace("_", " "),
-                "clauseTitle":   "Knowledge Graph",
-                "sectionTitle":  "",
-                "pageRange":     "",
-                "sourcePath":    "",
-                "evidenceQuote": "",
-                "route":         "graph",
-                "score":         1.0,
-            }
-            for cid in scope_ids
-        ]
+        # Fallback: if the retriever produced no fact-level citations, fall back to
+        # scope-based cards so the user still sees which contracts were queried.
+        if not citations:
+            scope_ids = contract_ids or ([contract_id] if contract_id else [])
+            citations = [
+                {
+                    "id": cid, "contractId": cid, "contractName": cid.replace("_", " "),
+                    "clauseTitle": "Knowledge Graph", "sectionTitle": "", "pageRange": "",
+                    "sourcePath": "", "evidenceQuote": "", "route": "graph", "score": 1.0,
+                }
+                for cid in scope_ids
+            ]
 
     elif route == "hybrid":
         context, citations = _hybrid_retrieve(

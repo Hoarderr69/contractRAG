@@ -58,7 +58,11 @@ When multiple contracts are in scope:
   - ...
 
 Formatting requirements:
-- Use clean professional formatting.
+- Use clean professional formatting in Markdown.
+- CRITICAL: put each numbered item and each bullet on its OWN line with a real
+  line break. NEVER write a run-on paragraph with inline "1. ... 2. ... 3.".
+  Separate top-level numbered items with a blank line.
+- Begin with a 1-2 sentence direct answer, THEN the list.
 - Use sequential numbering for top-level lists (1, 2, 3, ...).
 - Never restart numbering within the same answer unless starting a clearly new section.
 - Use bullet points (-) for supporting details beneath numbered items.
