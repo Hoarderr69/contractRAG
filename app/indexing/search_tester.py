@@ -111,6 +111,29 @@ class AzureSearchTester:
             }
         )
 
+    def delete_by_contract(self, contract_id: str) -> int:
+        """
+        Delete every search document for a contract. Returns count deleted.
+        Pages through results since a single batch is capped.
+        """
+        safe = contract_id.replace("'", "''")
+        total = 0
+        while True:
+            results = self.client.search(
+                search_text="*",
+                filter=f"contractId eq '{safe}'",
+                select=["id"],
+                top=1000,
+            )
+            keys = [{"id": r["id"]} for r in results if r.get("id")]
+            if not keys:
+                break
+            self.client.delete_documents(documents=keys)
+            total += len(keys)
+            if len(keys) < 1000:
+                break
+        return total
+
     def hybrid_search(
         self,
         query: str,

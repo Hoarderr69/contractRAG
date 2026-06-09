@@ -237,8 +237,14 @@ def _make_search_anchor():
     return _anchor
 
 
+# How many candidate sources we feed to the LLM for grounding. The LLM then
+# cites a subset via [S#]; only the cited ones become cards.
+_MAX_GRAPH_CITATIONS = 25
+
+
 def _graph_facts_to_citations(facts: List[Dict]) -> List[Dict]:
-    """Build citation cards from graph facts (with page/clause provenance)."""
+    """Build citation cards from graph facts (with page/clause provenance).
+    `score` carries the extraction confidence so we can rank before grounding."""
     citations, seen = [], set()
     for f in facts:
         cid = f.get("contractId") or ""
@@ -258,9 +264,66 @@ def _graph_facts_to_citations(facts: List[Dict]) -> List[Dict]:
             "sourcePath":    "",
             "evidenceQuote": (f.get("evidenceQuote") or "")[:200],
             "route":         "graph",
-            "score":         1.0,
+            "score":         float(f.get("confidence") or 0.0),
         })
+        if len(citations) >= _MAX_GRAPH_CITATIONS:
+            break
     return citations
+
+
+# ── Answer-grounded citations ─────────────────────────────────────────────────
+
+import re as _re
+
+
+def _ground_and_generate(
+    generator,
+    question: str,
+    context: str,
+    route: str,
+    citations: List[Dict],
+    chat_history: List[Dict[str, str]],
+    active_ids: Optional[List[str]],
+):
+    """
+    Rank candidate citations by score/confidence, expose them to the LLM as a
+    numbered SOURCES list, let it cite [S#] inline, then return ONLY the cited
+    cards (ordered by first appearance). Falls back to the top-ranked few if the
+    model cites nothing. Strips the [S#] markers from the displayed answer.
+
+    Returns (answer, follow_ups, grounded_citations).
+    """
+    ranked = sorted(citations, key=lambda c: c.get("score", 0.0), reverse=True)
+
+    if ranked:
+        lines = ["", "", "=" * 70, "SOURCES (cite the supporting one inline as [S#]):", "=" * 70]
+        for i, c in enumerate(ranked, 1):
+            pg = f" ({c['pageRange']})" if c.get("pageRange") else ""
+            lines.append(f"[S{i}] {c.get('clauseTitle') or c.get('contractName')}"
+                         f" — {c.get('contractName')}{pg}")
+        context = context + "\n".join(lines)
+
+    answer, follow_ups = generator.generate(
+        question=question, context=context, route=route,
+        chat_history=chat_history, active_contract_ids=active_ids,
+    )
+
+    used = [int(n) for n in _re.findall(r"\[S(\d+)\]", answer)]
+    # de-dup preserving first-appearance order
+    seen, order = set(), []
+    for n in used:
+        if 1 <= n <= len(ranked) and n not in seen:
+            seen.add(n)
+            order.append(n)
+
+    if order:
+        grounded = [ranked[n - 1] for n in order]
+    else:
+        grounded = ranked[:8]   # fallback: top-ranked few
+
+    # strip the [S#] markers from the answer shown to the user
+    clean = _re.sub(r"\s*\[S\d+\]", "", answer)
+    return clean, follow_ups, grounded
 
 
 def _graph_retrieve(question: str, contract_id: Optional[str],
@@ -426,12 +489,14 @@ def answer_question(
         active_ids = [contract_id]
 
     generator = AnswerGenerator()
-    answer, follow_ups = generator.generate(
+    answer, follow_ups, citations = _ground_and_generate(
+        generator,
         question=question,
         context=context,
         route=route,
+        citations=citations,
         chat_history=chat_history or [],
-        active_contract_ids=active_ids or None,
+        active_ids=active_ids or None,
     )
 
     result: Dict = {

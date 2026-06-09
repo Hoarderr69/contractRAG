@@ -80,6 +80,15 @@ Example format:
    - Maintain NERC compliance.
    - Follow environmental reporting requirements.
 
+SOURCE CITATIONS
+----------------
+- The context may end with a numbered SOURCES list, each item tagged [S1], [S2], ...
+- After each factual claim, cite the supporting source inline as [S#]
+  (e.g. "Con Edison furnishes O&M services at its discretion [S3].").
+- Cite ONLY sources that genuinely support the claim; prefer the single most
+  specific one. Do not invent [S#] numbers that are not in the SOURCES list.
+- If no SOURCES list is provided, do not add [S#] markers.
+
 OUTPUT FORMAT
 -------------
 You MUST respond with valid JSON only — no markdown fences, no extra text:

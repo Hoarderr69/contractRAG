@@ -119,7 +119,7 @@ class CanonicalGraphRetriever:
         rows = self.w.submit(
             f"g.V(cid).in('RESOLVED_AS').in('{edge}').hasLabel('Obligation').dedup()"
             f".limit({limit})"
-            ".valueMap('kgId','name','contractId','evidenceQuote','clauseTitle','pageStart','pageEnd')",
+            ".valueMap('kgId','name','contractId','confidence','evidenceQuote','clauseTitle','pageStart','pageEnd')",
             {"cid": canon_id},
         )
         facts = [self._norm_fact(r) for r in rows]
@@ -137,7 +137,7 @@ class CanonicalGraphRetriever:
             "g.V().has('sourceClauseId', within(cids))"
             ".hasLabel('Obligation','Right','Restriction','Event').dedup()"
             f".limit({MAX_SUBGRAPH_FACTS})"
-            ".valueMap('kgId','name','legalType','contractId','evidenceQuote','clauseTitle','pageStart','pageEnd')",
+            ".valueMap('kgId','name','legalType','contractId','confidence','evidenceQuote','clauseTitle','pageStart','pageEnd')",
             {"cids": clause_ids},
         )
         facts = [self._norm_fact(r) for r in rows]
@@ -152,6 +152,7 @@ class CanonicalGraphRetriever:
             "name": _fv(r, "name"),
             "legalType": _fv(r, "legalType"),
             "contractId": _fv(r, "contractId"),
+            "confidence": _fv(r, "confidence", 0.0),
             "evidenceQuote": _fv(r, "evidenceQuote"),
             "clauseTitle": _fv(r, "clauseTitle"),
             "pageStart": _fv(r, "pageStart"),
@@ -190,6 +191,13 @@ def canonical_graph_retrieve(
     search_anchor_fn(question, scope) -> List[clause_id]  (Phase-2 bridge; optional)
     """
     scope = list(contract_ids) if contract_ids else ([contract_id] if contract_id else None)
+    qlow = question.lower()
+    # Direction: "obligations owed TO X" → OWED_TO; otherwise the common case
+    # ("X's obligations" / "what does X owe") → OWED_BY only. This avoids
+    # conflating duties-of vs duties-toward and roughly halves the result set.
+    want_to = "owed to" in qlow or "owe to" in qlow or "owing to" in qlow
+    want_by = not want_to
+
     r = CanonicalGraphRetriever()
     all_facts: List[Dict] = []
     try:
@@ -199,8 +207,8 @@ def canonical_graph_retrieve(
         if linked:
             for c in linked:
                 contracts = r.contracts_for(c["id"])
-                owed_by = r.obligations_for(c["id"], "OWED_BY", scope)
-                owed_to = r.obligations_for(c["id"], "OWED_TO", scope)
+                owed_by = r.obligations_for(c["id"], "OWED_BY", scope) if want_by else []
+                owed_to = r.obligations_for(c["id"], "OWED_TO", scope) if want_to else []
                 header = [
                     "=" * 70,
                     f"ENTITY: {c['name']}   (appears in {len(contracts)} contract(s): {contracts})",
