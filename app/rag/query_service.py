@@ -16,6 +16,7 @@ from app.indexing.search_tester import AzureSearchTester
 from app.rag.contract_resolver import resolve_scope
 from app.rag.query_router import route_question
 from app.rag.graph_retriever import graph_native_retrieve
+from app.rag.graph_canonical import canonical_graph_retrieve
 from app.rag.answer_generator import AnswerGenerator
 from app.rag.summary_generator import format_summary_as_answer
 from app.services.prompt_builder import build_rag_prompt
@@ -188,7 +189,7 @@ def _hybrid_retrieve(
     for c in tree_citations:
         c["route"] = "hybrid"
 
-    graph_context = graph_native_retrieve(
+    graph_context = _graph_retrieve(
         question=question,
         contract_id=contract_id,
         contract_ids=contract_ids,
@@ -228,6 +229,31 @@ def _hybrid_retrieve(
 
 
 # ── Graph availability check ───────────────────────────────────────────────────
+
+def _make_search_anchor():
+    """Phase-2 bridge: vector/keyword search → relevant clause ids for graph anchoring."""
+    def _anchor(question: str, scope: Optional[List[str]]) -> List[str]:
+        try:
+            searcher = AzureSearchTester()
+            docs = searcher.hybrid_search(query=question, contract_ids=scope, top=8)
+            return [d.get("kgId") for d in docs if d.get("kgId")]
+        except Exception:
+            return []
+    return _anchor
+
+
+def _graph_retrieve(question: str, contract_id: Optional[str],
+                    contract_ids: Optional[List[str]]) -> str:
+    """Smart canonical-anchored graph retrieval, falling back to the legacy
+    template retriever when it finds nothing."""
+    ctx = canonical_graph_retrieve(
+        question, contract_id=contract_id, contract_ids=contract_ids,
+        search_anchor_fn=_make_search_anchor(),
+    )
+    if ctx and ctx.strip():
+        return ctx
+    return graph_native_retrieve(question, contract_id=contract_id, contract_ids=contract_ids)
+
 
 def _graph_available(contract_id: Optional[str], contract_ids: Optional[List[str]]) -> bool:
     if contract_ids and len(contract_ids) > 1:
@@ -334,7 +360,7 @@ def answer_question(
     citations: List[Dict] = []
 
     if route == "graph":
-        context = graph_native_retrieve(
+        context = _graph_retrieve(
             rewritten_query,
             contract_id=contract_id,
             contract_ids=contract_ids,

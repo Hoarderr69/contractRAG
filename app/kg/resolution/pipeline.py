@@ -24,6 +24,35 @@ def _contract_id_from_file(path: Path) -> str:
     return path.stem.replace("_legal_extractions", "")
 
 
+def resolve_one_contract(
+    contract_id: str,
+    tenant_id: str,
+    extraction_results: List[dict],
+) -> ResolvedGraph:
+    """
+    Run Pass 1→2→3 for a SINGLE contract's extraction results (in memory).
+    Used by the ingestion worker. Canonical ids are deterministic, so writing
+    the result idempotently merges into any existing canonical entities.
+    """
+    graph = ResolvedGraph()
+    nodes, edges, dropped, unmapped = normalize_contract(
+        contract_id=contract_id, tenant_id=tenant_id, extraction_results=extraction_results,
+    )
+    graph.dropped_edges = dropped
+    graph.unmapped_labels = unmapped
+
+    nodes, edges = resolve_contract(nodes, edges)
+    for n in nodes:
+        graph.nodes[n.kgId] = n
+    for e in edges:
+        graph.edges[e.edgeId] = e
+
+    canonicals, resolved_as = canonicalize(list(graph.nodes.values()))
+    graph.canonicals = canonicals
+    graph.resolved_as = resolved_as
+    return graph
+
+
 def run_pipeline(
     extractions_dir: str,
     tenant_id: str = "default",

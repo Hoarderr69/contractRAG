@@ -67,6 +67,52 @@ def edge_props(e: Edge) -> dict:
     return {k: v for k, v in props.items() if v is not None}
 
 
+def write_resolved_graph(writer, graph: ResolvedGraph, tenant_id: str,
+                         delay: float = 0.0, log=print) -> dict:
+    """
+    Write a ResolvedGraph to Gremlin via an existing GremlinWriter.
+    Idempotent (deterministic ids). Used by both the rebuild script and the
+    ingestion worker. Returns a small summary dict.
+    """
+    import time
+    sem_edges, res_edges, skipped = validate_edges(graph)
+
+    for n in graph.nodes.values():
+        writer.upsert_vertex(label=n.label, vertex_id=n.kgId, pk=n.tenantId,
+                             properties=node_props(n))
+        if delay:
+            time.sleep(delay)
+
+    for c in graph.canonicals.values():
+        writer.upsert_vertex(label="CanonicalEntity", vertex_id=c.id, pk=tenant_id,
+                             properties=canonical_props(c))
+        if delay:
+            time.sleep(delay)
+
+    for e in sem_edges:
+        writer.upsert_edge(source_id=e.sourceId, target_id=e.targetId,
+                           edge_label=e.label, properties=edge_props(e))
+        if delay:
+            time.sleep(delay)
+
+    for e in res_edges:
+        writer.upsert_edge(source_id=e.sourceId, target_id=e.targetId,
+                           edge_label="RESOLVED_AS", properties=edge_props(e))
+        if delay:
+            time.sleep(delay)
+
+    summary = {
+        "mention_vertices": len(graph.nodes),
+        "canonical_vertices": len(graph.canonicals),
+        "semantic_edges": len(sem_edges),
+        "resolved_as_edges": len(res_edges),
+        "skipped_edges": sum(skipped.values()),
+    }
+    if log:
+        log(f"  wrote {summary}")
+    return summary
+
+
 def validate_edges(graph: ResolvedGraph) -> Tuple[List[Edge], List[Edge], Dict[str, int]]:
     """
     Keep only edges whose endpoints exist as written vertices.
