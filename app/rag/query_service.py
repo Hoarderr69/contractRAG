@@ -128,7 +128,7 @@ def _docs_to_citations(docs: list, route: str = "tree") -> List[Dict]:
             "sectionTitle":  doc.get("sectionTitle") or "",
             "pageRange":     f"{page_start}–{page_end}" if page_start else "",
             "sourcePath":    doc.get("sourcePath") or "",
-            "evidenceQuote": (doc.get("text") or "")[:200],
+            "evidenceQuote": _clean_quote(doc.get("text")),
             "route":         route,
             "score":         round(doc.get("score", 0), 4),
         })
@@ -156,7 +156,7 @@ def _chunks_to_citations(chunks: list) -> List[Dict]:
             "sectionTitle":  chunk.get("sectionTitle") or "",
             "pageRange":     f"{page_start}–{page_end}" if page_start else "",
             "sourcePath":    chunk.get("sourcePath") or "",
-            "evidenceQuote": (chunk.get("text") or "")[:200],
+            "evidenceQuote": _clean_quote(chunk.get("text")),
             "route":         "tree",
             "score":         round(chunk.get("score", 0), 4),
         })
@@ -164,6 +164,52 @@ def _chunks_to_citations(chunks: list) -> List[Dict]:
 
 
 # ── Retrieval helpers — return (context_str, citations) ───────────────────────
+
+_THIN_CONTEXT_MARKERS = (
+    "no azure ai search results",
+    "no graph",
+    "no facts",
+    "no results",
+    "not found",
+)
+
+
+def _context_is_thin(context: Optional[str]) -> bool:
+    """
+    True when a retrieved context carries essentially no usable evidence —
+    empty, only section headers/separators, or an explicit "nothing found"
+    marker. Used to trigger a tree-search fallback.
+    """
+    if not context:
+        return True
+    # Strip separator/header decoration ("=" rules and ALL-CAPS section labels).
+    meaningful = [
+        ln for ln in context.splitlines()
+        if ln.strip() and set(ln.strip()) != {"="} and not ln.strip().isupper()
+    ]
+    body = " ".join(meaningful).strip()
+    if len(body) < 200:
+        return True
+    low = body.lower()
+    return any(m in low for m in _THIN_CONTEXT_MARKERS)
+
+
+def _clean_quote(text: Optional[str], limit: int = 220) -> str:
+    """Trim an evidence quote to a sentence/word boundary so cards don't cut mid-word."""
+    if not text:
+        return ""
+    t = text.strip()
+    if len(t) <= limit:
+        return t
+    head = t[:limit]
+    # Prefer the last sentence end, else the last space.
+    cut = max(head.rfind(". "), head.rfind("; "))
+    if cut < limit * 0.5:
+        cut = head.rfind(" ")
+    if cut <= 0:
+        cut = limit
+    return head[:cut].rstrip(" ,;:") + "…"
+
 
 def _format_search_docs(docs: list) -> str:
     if not docs:
@@ -314,7 +360,7 @@ def _graph_facts_to_citations(facts: List[Dict]) -> List[Dict]:
             "sectionTitle":  "",
             "pageRange":     f"{ps}–{pe}" if ps else "",
             "sourcePath":    "",
-            "evidenceQuote": (f.get("evidenceQuote") or "")[:200],
+            "evidenceQuote": _clean_quote(f.get("evidenceQuote")),
             "route":         "graph",
             "score":         float(f.get("confidence") or 0.0),
         })
@@ -338,6 +384,21 @@ def _ground_and_generate(
     few if the model cites nothing. Strips [S#] markers from the displayed answer.
     """
     ranked = sorted(citations, key=lambda c: c.get("score", 0.0), reverse=True)
+
+    # Content-level dedup: collapse cards that point at the same clause even
+    # when their internal ids differ (tree vs graph builders can both emit it).
+    deduped, seen_keys = [], set()
+    for c in ranked:
+        key = (
+            c.get("contractId", ""),
+            (c.get("clauseTitle") or "").strip().lower(),
+            c.get("pageRange", ""),
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(c)
+    ranked = deduped
 
     if ranked:
         lines = ["", "", "=" * 70, "SOURCES (cite the supporting one inline as [S#]):", "=" * 70]
@@ -501,7 +562,22 @@ def answer_question(
             contract_id=contract_id,
             contract_ids=contract_ids,
         )
-        if not citations:
+        # Reliability guard: if the graph yields little or no usable context,
+        # fall back to tree search instead of answering "Not found". A contract
+        # may have only a partial graph (or none for some topics), and tree
+        # search almost always has the underlying clause text.
+        if _context_is_thin(context):
+            logger.info("Graph context thin — falling back to tree retrieval.")
+            context, citations = _tree_retrieve(
+                question=rewritten_query,
+                contract_id=contract_id,
+                contract_ids=contract_ids,
+                top=top,
+                structural_scope=structural_scope,
+            )
+            route = "tree"
+            reason = f"{reason} (graph context sparse — fell back to tree search)"
+        elif not citations:
             scope_ids = contract_ids or ([contract_id] if contract_id else [])
             citations = [
                 {
@@ -519,6 +595,18 @@ def answer_question(
             contract_ids=contract_ids,
             top=top,
         )
+        # If hybrid produced no real citations (both halves thin), retry as tree.
+        if _context_is_thin(context) and not citations:
+            logger.info("Hybrid context thin — falling back to tree retrieval.")
+            context, citations = _tree_retrieve(
+                question=rewritten_query,
+                contract_id=contract_id,
+                contract_ids=contract_ids,
+                top=top,
+                structural_scope=structural_scope,
+            )
+            route = "tree"
+            reason = f"{reason} (hybrid context sparse — fell back to tree search)"
 
     else:  # tree
         context, citations = _tree_retrieve(

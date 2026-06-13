@@ -218,6 +218,28 @@ ANSWER (JSON only)
         return _parse_response(raw, question)
 
 
+# Matches an inline top-level list item: punctuation/space, then "<1-2 digits>. "
+# followed by a capital letter — e.g. "...provisions: 1. Early ... 2. Effectiveness".
+# Excludes section refs like "Article 21." (no capitalized clause start after a
+# space-preceded number) by requiring a preceding sentence-ending punctuation.
+_INLINE_LIST_RE = re.compile(r"(?<=[.:;)])\s+(\d{1,2})\.\s+(?=[A-Z])")
+
+
+def _normalize_list_formatting(answer: str) -> str:
+    """
+    Put each top-level numbered item on its own line. The model sometimes emits
+    run-on lists ("...: 1. Foo ... 2. Bar") inside the JSON answer string; this
+    inserts blank lines so the markdown renders as a real list.
+    """
+    if not answer:
+        return answer
+    # Insert a paragraph break before inline "N. " items.
+    fixed = _INLINE_LIST_RE.sub(r"\n\n\1. ", answer)
+    # Collapse any runs of 3+ newlines created by the substitution.
+    fixed = re.sub(r"\n{3,}", "\n\n", fixed)
+    return fixed.strip()
+
+
 def _parse_response(raw: str, fallback_question: str) -> Tuple[str, List[str]]:
     """Parse JSON response; gracefully degrade if malformed."""
     cleaned = re.sub(r"```(?:json)?|```", "", raw).strip()
@@ -229,8 +251,8 @@ def _parse_response(raw: str, fallback_question: str) -> Tuple[str, List[str]]:
             suggestions = [s for s in suggestions if isinstance(s, str)][:3]
         else:
             suggestions = []
-        return answer, suggestions
+        return _normalize_list_formatting(answer), suggestions
     except (json.JSONDecodeError, AttributeError):
         # LLM didn't return JSON — treat entire response as the answer
         logger.warning("AnswerGenerator returned non-JSON; using raw text as answer.")
-        return raw.strip(), []
+        return _normalize_list_formatting(raw.strip()), []

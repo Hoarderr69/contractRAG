@@ -41,7 +41,47 @@ from app.services.frontend_ingestion_service import sanitize_contract_id
 from app.storage.blob_store import BlobStore
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+
+
+def _configure_logging() -> None:
+    """
+    Keep our own app logs (route selection, ingestion, etc.) at INFO while
+    silencing the very chatty Azure SDK / HTTP loggers that otherwise dump
+    full request/response headers on every Cosmos, Search and Blob call.
+
+    Override per-logger levels via the LOG_LEVEL env var (default INFO).
+    """
+    import os
+
+    app_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+    logging.basicConfig(
+        level=app_level,
+        format="%(asctime)s %(levelname)-7s %(name)s — %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    # Our application code stays at the chosen level.
+    logging.getLogger("app").setLevel(app_level)
+
+    # Mute the noisy third-party loggers — only show their warnings/errors.
+    for noisy in (
+        "azure",
+        "azure.core.pipeline.policies.http_logging_policy",
+        "azure.cosmos",
+        "azure.storage",
+        "azure.search",
+        "urllib3",
+        "uvicorn.access",
+        "openai",
+        "httpx",
+        "httpcore",
+        "gremlinpython",
+    ):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+_configure_logging()
 
 
 @asynccontextmanager
