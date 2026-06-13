@@ -13,6 +13,7 @@ import logging
 import re as _re
 from typing import Dict, List, Optional, Tuple
 
+from app import config
 from app.indexing.search_tester import AzureSearchTester
 from app.rag.contract_resolver import resolve_scope
 from app.rag.query_router import route_question
@@ -545,10 +546,16 @@ def answer_question(
         route = route_override
         reason = f"User override: {route_override}"
 
-    graph_ok = _graph_available(contract_id, contract_ids)
-    if route in {"graph", "hybrid"} and not graph_ok:
+    # Demo switch: force graph/hybrid onto the deterministic tree route so a
+    # partial/stale graph can't answer "does not contain ..." before tree runs.
+    if getattr(config, "DISABLE_GRAPH_ROUTE", False) and route in {"graph", "hybrid"}:
         route = "tree"
-        reason = "No knowledge graph available for this contract — using tree search."
+        reason = "Graph routing disabled — using tree search."
+    else:
+        graph_ok = _graph_available(contract_id, contract_ids)
+        if route in {"graph", "hybrid"} and not graph_ok:
+            route = "tree"
+            reason = "No knowledge graph available for this contract — using tree search."
 
     if scope_reason:
         reason = f"{reason} ({scope_reason})"

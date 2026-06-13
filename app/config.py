@@ -158,6 +158,13 @@ KG_DRY_RUN = os.getenv("KG_DRY_RUN", "false").lower() == "true"
 # tree search. Recommended for demos on low-TPM deployments.
 DISABLE_KG_EXTRACTION = os.getenv("DISABLE_KG_EXTRACTION", "false").lower() == "true"
 
+# Set true to force every query onto the tree (Azure AI Search) route at answer
+# time, even for contracts that already have a knowledge graph. This guarantees
+# deterministic retrieval for demos — a partial/stale graph can otherwise answer
+# "does not contain ..." before the tree route is tried. Set false to re-enable
+# graph + hybrid routing.
+DISABLE_GRAPH_ROUTE = os.getenv("DISABLE_GRAPH_ROUTE", "false").lower() == "true"
+
 # A job left in "processing" longer than this is considered orphaned (e.g. the
 # worker container crashed mid-run) and is reported as failed when listed.
 JOB_STALE_AFTER_MINUTES = int(os.getenv("JOB_STALE_AFTER_MINUTES", "15"))

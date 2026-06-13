@@ -101,6 +101,7 @@ az containerapp create \
         GREMLIN_PASSWORD=secretref:gremlin-pw \
         TENANT_ID="${TENANT_ID:-contract360-prod}" \
         DISABLE_KG_EXTRACTION="${DISABLE_KG_EXTRACTION:-true}" \
+        DISABLE_GRAPH_ROUTE="${DISABLE_GRAPH_ROUTE:-true}" \
         JOB_STALE_AFTER_MINUTES="${JOB_STALE_AFTER_MINUTES:-15}" \
     --secrets \
         openai-key="${AZURE_OPENAI_API_KEY}" \

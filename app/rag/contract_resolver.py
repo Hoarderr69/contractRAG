@@ -111,22 +111,28 @@ def resolve_scope(
         "estate", "corporate", "purchased", "pricing", "scope",
     }
 
-    def _matches(cid: str) -> bool:
+    def _match_strength(cid: str) -> int:
+        """Number of distinct question tokens that hit this contract's tokens."""
         ctoks = _distinctive_tokens(cid)
-        # Exact token overlap.
-        if ctoks & qtoks:
-            return True
-        # Substring overlap for longer, distinctive tokens
-        # (e.g. "empire" ⊂ "empirestateln").
+        score = 0
         for qt in qtoks:
+            if qt in ctoks:
+                score += 1
+                continue
+            # Substring overlap for longer, distinctive tokens
+            # (e.g. "empire" ⊂ "empirestateln").
             if len(qt) < 5 or qt in _GENERIC_SUBSTR_SKIP:
                 continue
-            for ct in ctoks:
-                if qt in ct or ct in qt:
-                    return True
-        return False
+            if any((qt in ct or ct in qt) for ct in ctoks):
+                score += 1
+        return score
 
-    matched = [cid for cid in candidate_ids if _matches(cid)]
+    scored = [(cid, _match_strength(cid)) for cid in candidate_ids]
+    best = max((s for _, s in scored), default=0)
+    # Keep only the strongest-matching tier. When one contract matches more of
+    # the question than the others (e.g. NYISO EPC on 2 tokens vs NextEra O&M on
+    # 1), this drops the weaker, noisier matches that hurt retrieval recall.
+    matched = [cid for cid, s in scored if s == best and s > 0]
 
     if matched and len(matched) < len(candidate_ids):
         names = ", ".join(c.replace("_", " ") for c in matched)
