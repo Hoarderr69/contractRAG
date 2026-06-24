@@ -390,9 +390,11 @@ def _tree_retrieve(
         title_nodes = _title_match_nodes(question, _load_tree(boost_cid), seen_ids)
         if title_nodes:
             boosted = [_tree_node_to_doc(n, boost_cid) for n in title_nodes]
-            logger.info("Title-boost: injected %d node(s) for '%s'.", len(boosted), boost_cid)
+            titles = ", ".join((n.get("title") or "")[:40] for n in title_nodes)
+            logger.info("Title-boost: injected %d node(s) → %s", len(boosted), titles)
             docs = boosted + docs
 
+    logger.info("Tree search: %d docs from AI Search", len(docs))
     return _format_search_docs(docs), _docs_to_citations(docs)
 
 
@@ -600,6 +602,8 @@ def answer_question(
     if contract_ids is not None and len(contract_ids) == 0:
         contract_ids = None
 
+    logger.info("──────── Q: %r", question[:100])
+
     # ── Scope resolution: narrow to contracts the question names ──────
     scope_reason: Optional[str] = None
     if contract_ids:
@@ -621,11 +625,13 @@ def answer_question(
     # Effective single contract: explicit contract_id, or a scope that resolved
     # to exactly one contract. Used by the summary/structure shortcuts.
     single_cid = contract_id or (contract_ids[0] if contract_ids and len(contract_ids) == 1 else None)
+    logger.info("Scope: %s", single_cid or contract_ids or "portfolio (all contracts)")
 
     # ── 0a. Structure / table-of-contents shortcut ────────────────────
     if _is_structure_query(question) and single_cid and route_override == "auto":
         tree = _load_tree(single_cid)
         if tree:
+            logger.info("Shortcut: structure/TOC for %s (no LLM)", single_cid)
             answer = _build_toc_answer(tree, single_cid)
             result: Dict = {
                 "route":                 "structure",
@@ -644,6 +650,7 @@ def answer_question(
         store = get_artifact_store()
         summary = store.load_summary(single_cid)
         if summary:
+            logger.info("Shortcut: pre-generated summary for %s (no LLM)", single_cid)
             answer = format_summary_as_answer(summary)
             result: Dict = {
                 "route":                "summary",
@@ -681,6 +688,8 @@ def answer_question(
 
     if scope_reason:
         reason = f"{reason} ({scope_reason})"
+
+    logger.info("Final route: %s — %s", route, reason)
 
     # ── 2. Retrieve ────────────────────────────────────────────────────
     citations: List[Dict] = []
@@ -746,6 +755,8 @@ def answer_question(
             structural_scope=structural_scope,
         )
 
+    logger.info("Retrieved: context=%d chars | %d candidate sources", len(context), len(citations))
+
     # ── 3. Generate answer + follow-up suggestions ─────────────────────
     active_ids: List[str] = []
     if contract_ids:
@@ -763,6 +774,8 @@ def answer_question(
         chat_history=chat_history or [],
         active_ids=active_ids or None,
     )
+    logger.info("Answer ready: route=%s | %d cited sources | %d follow-ups",
+                route, len(citations), len(follow_ups))
 
     result: Dict = {
         "route":                 route,
