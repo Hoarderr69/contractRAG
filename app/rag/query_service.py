@@ -227,11 +227,106 @@ def _clean_quote(text: Optional[str], limit: int = 220) -> str:
     return head[:cut].rstrip(" ,;:") + "…"
 
 
+# Title-boost: words that carry no signal when matching a question to a node title.
+_TITLE_STOPWORDS = {
+    "the", "a", "an", "of", "in", "on", "for", "to", "and", "or", "what", "which",
+    "are", "is", "does", "do", "this", "that", "contract", "agreement", "section",
+    "clause", "article", "terms", "term", "provisions", "provision", "costs", "cost",
+    "general", "mentioned", "available", "me", "tell", "about", "with", "by",
+}
+
+
+def _title_tokens(text: str) -> set:
+    toks = _re.findall(r"[a-z0-9]+", (text or "").lower())
+    return {t for t in toks if t not in _TITLE_STOPWORDS and len(t) > 2}
+
+
+def _title_match_nodes(question: str, tree: Optional[Dict],
+                       exclude_ids: set) -> List[Dict]:
+    """
+    Find tree nodes whose TITLE strongly matches the question, to recover
+    specific named sections/tables that vector ranking buries (e.g. a numbers
+    table titled "ASO Estimated Total Costs").
+
+    Strictly gated so it can't explode context:
+      - specificity: >= 2 distinctive (non-stopword) title tokens hit the question
+      - size:        leaf-ish nodes only (small text, few children, not a heading)
+      - count:       at most TITLE_BOOST_MAX_NODES
+      - dedup:       skip nodes already retrieved by vector search
+    """
+    if not tree:
+        return []
+    qtoks = _title_tokens(question)
+    if not qtoks:
+        return []
+
+    scored: List[tuple] = []
+
+    def _walk(node: Dict) -> None:
+        node_id = node.get("nodeId")
+        title = node.get("title") or ""
+        text = node.get("text") or ""
+        children = node.get("children", []) or []
+        node_type = (node.get("nodeType") or "").lower()
+
+        ttoks = _title_tokens(title)
+        overlap = len(ttoks & qtoks)
+
+        # Size gate: skip headings/containers and over-long nodes.
+        is_leafish = (
+            node_type not in {"document", "article"}
+            and len(children) <= 3
+            and 40 <= len(text) <= config.MAX_SEARCH_DOC_CHARS * 2
+        )
+
+        if (
+            node_id
+            and node_id not in exclude_ids
+            and overlap >= 2
+            and is_leafish
+        ):
+            scored.append((overlap, node))
+
+        for child in children:
+            _walk(child)
+
+    _walk(tree)
+    if not scored:
+        return []
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [n for _, n in scored[: config.TITLE_BOOST_MAX_NODES]]
+
+
+def _tree_node_to_doc(node: Dict, contract_id: str) -> Dict:
+    """Shape a tree node like a search doc so it flows through the normal context
+    + citation path. High score so it ranks first in the SOURCES list."""
+    return {
+        "contractId":  contract_id,
+        "nodeId":      node.get("nodeId"),
+        "kgId":        node.get("kgId"),
+        "title":       node.get("title"),
+        "sectionTitle": node.get("sectionTitle") or "",
+        "clauseTitle": node.get("title"),
+        "text":        node.get("text"),
+        "pageStart":   node.get("pageStart"),
+        "pageEnd":     node.get("pageEnd"),
+        "sourcePath":  node.get("sourcePath") or "",
+        "score":       1.0,
+    }
+
+
 def _format_search_docs(docs: list) -> str:
+    """
+    Render search docs into context, bounded so a large top-k can't dilute the
+    answer or balloon cost. Each doc's text is capped to MAX_SEARCH_DOC_CHARS and
+    the whole block to MAX_CONTEXT_CHARS (same budget as build_rag_prompt).
+    """
     if not docs:
         return "No Azure AI Search results found."
     parts = []
     for idx, doc in enumerate(docs, start=1):
+        text = (doc.get("text") or "")[: config.MAX_SEARCH_DOC_CHARS]
         parts += [
             "=" * 80,
             f"SEARCH RESULT {idx}  [CONTRACT: {doc.get('contractId', 'unknown')}]",
@@ -242,10 +337,10 @@ def _format_search_docs(docs: list) -> str:
             f"Pages: {doc.get('pageStart')}-{doc.get('pageEnd')}",
             f"Source path: {doc.get('sourcePath')}",
             "",
-            doc.get("text") or "",
+            text,
             "",
         ]
-    return "\n".join(parts)
+    return "\n".join(parts)[: config.MAX_CONTEXT_CHARS]
 
 
 def _tree_retrieve(
@@ -285,6 +380,19 @@ def _tree_retrieve(
         contract_ids=contract_ids,
         top=top,
     )
+
+    # Title-boost: for a single-contract scope, recover specific named sections
+    # (e.g. a numbers table) that vector ranking buries. Gated + deduped, then
+    # prepended so the assembled context still respects the global budget.
+    boost_cid = contract_id or (contract_ids[0] if contract_ids and len(contract_ids) == 1 else None)
+    if boost_cid:
+        seen_ids = {d.get("nodeId") for d in docs} | {d.get("kgId") for d in docs}
+        title_nodes = _title_match_nodes(question, _load_tree(boost_cid), seen_ids)
+        if title_nodes:
+            boosted = [_tree_node_to_doc(n, boost_cid) for n in title_nodes]
+            logger.info("Title-boost: injected %d node(s) for '%s'.", len(boosted), boost_cid)
+            docs = boosted + docs
+
     return _format_search_docs(docs), _docs_to_citations(docs)
 
 

@@ -142,6 +142,26 @@ CHUNK_OVERLAP_WORDS = 80
 
 
 # ---------------------------------------------------------------------
+# Retrieval context budget
+# Keeps the assembled LLM context bounded so large top-k / graph dumps
+# don't dilute the answer ("lost in the middle") or balloon cost/latency.
+# ---------------------------------------------------------------------
+
+# Hard cap on the full assembled retrieval context handed to the LLM.
+MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "12000"))
+# Per-document text cap before assembly (one search result / clause).
+MAX_SEARCH_DOC_CHARS = int(os.getenv("MAX_SEARCH_DOC_CHARS", "1500"))
+
+# Graph retrieval caps (lower = sharper, less dilution).
+MAX_OBLIGATIONS_PER_ENTITY = int(os.getenv("MAX_OBLIGATIONS_PER_ENTITY", "15"))
+MAX_SUBGRAPH_FACTS = int(os.getenv("MAX_SUBGRAPH_FACTS", "20"))
+MAX_GRAPH_ENTITIES = int(os.getenv("MAX_GRAPH_ENTITIES", "4"))
+
+# Title-boost: how many strong title-matched tree nodes to inject at most.
+TITLE_BOOST_MAX_NODES = int(os.getenv("TITLE_BOOST_MAX_NODES", "2"))
+
+
+# ---------------------------------------------------------------------
 # KG extraction defaults
 # ---------------------------------------------------------------------
 

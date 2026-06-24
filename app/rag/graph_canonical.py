@@ -18,16 +18,17 @@ whole graph into the prompt (the old 429 cause).
 import logging
 from typing import Dict, List, Optional
 
+from app import config
 from app.kg.gremlin_writer import GremlinWriter
 from app.kg.resolution.model import normalize_name
 
 logger = logging.getLogger(__name__)
 
-# Bounds (keep context small + RU cheap)
-MAX_OBLIGATIONS_PER_ENTITY = 40
-MAX_ENTITIES = 5
+# Bounds (keep context small + RU cheap) — tunable via config/env.
+MAX_OBLIGATIONS_PER_ENTITY = config.MAX_OBLIGATIONS_PER_ENTITY
+MAX_ENTITIES = config.MAX_GRAPH_ENTITIES
 MAX_VECTOR_CLAUSES = 8
-MAX_SUBGRAPH_FACTS = 40
+MAX_SUBGRAPH_FACTS = config.MAX_SUBGRAPH_FACTS
 
 
 def _fv(m: Dict, k: str, default=None):

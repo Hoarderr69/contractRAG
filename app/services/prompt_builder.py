@@ -1,3 +1,6 @@
+from app import config
+
+
 def build_rag_prompt(
     query: str,
     retrieved_chunks: list
@@ -7,7 +10,7 @@ def build_rag_prompt(
 
     seen_nodes = set()
 
-    MAX_CONTEXT_CHARS = 12000
+    MAX_CONTEXT_CHARS = config.MAX_CONTEXT_CHARS
 
     for chunk in retrieved_chunks:
 
