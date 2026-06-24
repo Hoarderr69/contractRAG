@@ -696,14 +696,16 @@ def answer_question(
     logger.info("Final route: %s — %s", route, reason)
 
     # Retrieval query. The router's rewrite is non-deterministic run-to-run, so
-    # blending it in destabilises ranking for standalone questions. Only use it
-    # when there is chat history to resolve (pronouns/follow-ups); otherwise
-    # retrieve on the raw question, which is deterministic and keeps strong
-    # matches (a specific table/section) at their natural rank.
+    # blending it in destabilises ranking. A long, self-contained question never
+    # needs it — only short, anaphoric follow-ups ("what about its deadlines?")
+    # do. So use the rewrite ONLY for short questions that have history to
+    # resolve; otherwise retrieve on the raw question (fully deterministic).
+    _is_short_followup = len(question.split()) <= 12
     if (chat_history
+            and _is_short_followup
             and rewritten_query
             and rewritten_query.strip().lower() != question.strip().lower()):
-        retrieval_query = f"{question} {rewritten_query}"
+        retrieval_query = rewritten_query
     else:
         retrieval_query = question
 
