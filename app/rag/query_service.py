@@ -69,19 +69,35 @@ def _is_structure_query(question: str) -> bool:
     return any(pat in q for pat in _STRUCTURE_PATTERNS)
 
 
+# Reused across requests: one Blob client + a per-contract tree cache, so the
+# structure shortcut and title-boost don't re-download tree.json (and re-open a
+# new Blob connection) on every question — which was exhausting the connection
+# pool and triggering "unable to stream download" warnings.
+_tree_store = None
+_TREE_CACHE: Dict[str, Optional[Dict]] = {}
+
+
 def _load_tree(contract_id: str) -> Optional[Dict]:
     """
-    Always load the contract tree from Azure Blob Storage, regardless of the
-    USE_BLOB_ARTIFACTS mode. The local ArtifactStore has no get_tree, and trees
-    are only persisted in Blob — so the structure shortcut and any tree-based
-    feature must read from Blob directly. Returns None (and logs) on any miss.
+    Load a contract tree from Azure Blob Storage (cached). Trees are only
+    persisted in Blob, so the structure shortcut and any tree-based feature read
+    from Blob directly regardless of USE_BLOB_ARTIFACTS. Returns None on a miss.
     """
+    if contract_id in _TREE_CACHE:
+        return _TREE_CACHE[contract_id]
+
+    global _tree_store
+    tree: Optional[Dict] = None
     try:
-        from app.storage.blob_artifact_store import BlobArtifactStore
-        return BlobArtifactStore().get_tree(contract_id)
+        if _tree_store is None:
+            from app.storage.blob_artifact_store import BlobArtifactStore
+            _tree_store = BlobArtifactStore()
+        tree = _tree_store.get_tree(contract_id)
     except Exception as exc:
         logger.warning("Could not load tree for '%s' from Blob: %s", contract_id, exc)
-        return None
+
+    _TREE_CACHE[contract_id] = tree
+    return tree
 
 
 def _build_toc_answer(tree: Dict, contract_id: str) -> str:
