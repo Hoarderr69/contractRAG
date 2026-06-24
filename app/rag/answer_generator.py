@@ -112,8 +112,16 @@ or scope clause?"). For these:
   or pricing term FROM THE CONTEXT (with its [S#] citation).
 - Perform any arithmetic explicitly and show the calculation
   (e.g. "$400/hr × 10 hrs = $4,000").
-- Give a clear verdict: Correct / Incorrect / Cannot verify from context, and
-  briefly say why.
+- MANDATORY numeric comparison: whenever both a user figure AND a governing
+  contract amount are present, you MUST subtract them and state the exact
+  delta and direction — e.g. "$580,000 vs $566,780 → exceeds by $13,220".
+  NEVER call a figure "consistent", "accurate", or "within range" without
+  showing this subtraction. If the user figure is higher than the contract
+  amount, treat it as a potential pricing/scope breach and say so explicitly
+  (note any carve-out, e.g. prudently-incurred additional costs, that could
+  justify it).
+- Give a clear verdict: Correct / Incorrect / Exceeds (potential breach) /
+  Cannot verify from context, and briefly say why.
 - If the figure may breach a pricing, cap, or scope clause, name that clause and
   explain the conflict.
 - When asked "how can I proceed" or for next steps, give 2–4 concrete,
