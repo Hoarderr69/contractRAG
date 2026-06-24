@@ -69,6 +69,21 @@ def _is_structure_query(question: str) -> bool:
     return any(pat in q for pat in _STRUCTURE_PATTERNS)
 
 
+def _load_tree(contract_id: str) -> Optional[Dict]:
+    """
+    Always load the contract tree from Azure Blob Storage, regardless of the
+    USE_BLOB_ARTIFACTS mode. The local ArtifactStore has no get_tree, and trees
+    are only persisted in Blob — so the structure shortcut and any tree-based
+    feature must read from Blob directly. Returns None (and logs) on any miss.
+    """
+    try:
+        from app.storage.blob_artifact_store import BlobArtifactStore
+        return BlobArtifactStore().get_tree(contract_id)
+    except Exception as exc:
+        logger.warning("Could not load tree for '%s' from Blob: %s", contract_id, exc)
+        return None
+
+
 def _build_toc_answer(tree: Dict, contract_id: str) -> str:
     """
     Walk the contract tree and render its section/article headings as a clean
@@ -501,8 +516,7 @@ def answer_question(
 
     # ── 0a. Structure / table-of-contents shortcut ────────────────────
     if _is_structure_query(question) and single_cid and route_override == "auto":
-        store = get_artifact_store()
-        tree = store.get_tree(single_cid) if hasattr(store, "get_tree") else None
+        tree = _load_tree(single_cid)
         if tree:
             answer = _build_toc_answer(tree, single_cid)
             result: Dict = {
