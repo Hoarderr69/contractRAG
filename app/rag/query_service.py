@@ -695,11 +695,14 @@ def answer_question(
 
     logger.info("Final route: %s — %s", route, reason)
 
-    # Retrieval query: combine the original question with the router's rewrite.
-    # The rewrite helps resolve pronouns from chat history, but on its own it can
-    # demote strong matches (a specific table/section ranked high for the raw
-    # wording). Using both preserves recall AND follow-up context.
-    if rewritten_query and rewritten_query.strip().lower() != question.strip().lower():
+    # Retrieval query. The router's rewrite is non-deterministic run-to-run, so
+    # blending it in destabilises ranking for standalone questions. Only use it
+    # when there is chat history to resolve (pronouns/follow-ups); otherwise
+    # retrieve on the raw question, which is deterministic and keeps strong
+    # matches (a specific table/section) at their natural rank.
+    if (chat_history
+            and rewritten_query
+            and rewritten_query.strip().lower() != question.strip().lower()):
         retrieval_query = f"{question} {rewritten_query}"
     else:
         retrieval_query = question
