@@ -242,7 +242,7 @@ def _title_tokens(text: str) -> set:
 
 
 def _title_match_nodes(question: str, tree: Optional[Dict],
-                       exclude_ids: set) -> List[Dict]:
+                       exclude_ids: set, contract_id: Optional[str] = None) -> List[Dict]:
     """
     Find tree nodes whose TITLE strongly matches the question, to recover
     specific named sections/tables that vector ranking buries (e.g. a numbers
@@ -253,10 +253,14 @@ def _title_match_nodes(question: str, tree: Optional[Dict],
       - size:        leaf-ish nodes only (small text, few children, not a heading)
       - count:       at most TITLE_BOOST_MAX_NODES
       - dedup:       skip nodes already retrieved by vector search
+
+    Contract-name tokens are removed from the question first, so repeating the
+    contract name (e.g. "...in the Solar System O&M agreement") can't match the
+    scope node — only the distinctive intent words drive the boost.
     """
     if not tree:
         return []
-    qtoks = _title_tokens(question)
+    qtoks = _title_tokens(question) - _title_tokens(contract_id or "")
     if not qtoks:
         return []
 
@@ -387,7 +391,7 @@ def _tree_retrieve(
     boost_cid = contract_id or (contract_ids[0] if contract_ids and len(contract_ids) == 1 else None)
     if boost_cid:
         seen_ids = {d.get("nodeId") for d in docs} | {d.get("kgId") for d in docs}
-        title_nodes = _title_match_nodes(question, _load_tree(boost_cid), seen_ids)
+        title_nodes = _title_match_nodes(question, _load_tree(boost_cid), seen_ids, boost_cid)
         if title_nodes:
             boosted = [_tree_node_to_doc(n, boost_cid) for n in title_nodes]
             titles = ", ".join((n.get("title") or "")[:40] for n in title_nodes)
@@ -691,12 +695,21 @@ def answer_question(
 
     logger.info("Final route: %s — %s", route, reason)
 
+    # Retrieval query: combine the original question with the router's rewrite.
+    # The rewrite helps resolve pronouns from chat history, but on its own it can
+    # demote strong matches (a specific table/section ranked high for the raw
+    # wording). Using both preserves recall AND follow-up context.
+    if rewritten_query and rewritten_query.strip().lower() != question.strip().lower():
+        retrieval_query = f"{question} {rewritten_query}"
+    else:
+        retrieval_query = question
+
     # ── 2. Retrieve ────────────────────────────────────────────────────
     citations: List[Dict] = []
 
     if route == "graph":
         context, citations = _graph_retrieve(
-            rewritten_query,
+            retrieval_query,
             contract_id=contract_id,
             contract_ids=contract_ids,
         )
@@ -707,7 +720,7 @@ def answer_question(
         if _context_is_thin(context):
             logger.info("Graph context thin — falling back to tree retrieval.")
             context, citations = _tree_retrieve(
-                question=rewritten_query,
+                question=retrieval_query,
                 contract_id=contract_id,
                 contract_ids=contract_ids,
                 top=top,
@@ -728,7 +741,7 @@ def answer_question(
 
     elif route == "hybrid":
         context, citations = _hybrid_retrieve(
-            question=rewritten_query,
+            question=retrieval_query,
             contract_id=contract_id,
             contract_ids=contract_ids,
             top=top,
@@ -737,7 +750,7 @@ def answer_question(
         if _context_is_thin(context) and not citations:
             logger.info("Hybrid context thin — falling back to tree retrieval.")
             context, citations = _tree_retrieve(
-                question=rewritten_query,
+                question=retrieval_query,
                 contract_id=contract_id,
                 contract_ids=contract_ids,
                 top=top,
@@ -748,7 +761,7 @@ def answer_question(
 
     else:  # tree
         context, citations = _tree_retrieve(
-            question=rewritten_query,
+            question=retrieval_query,
             contract_id=contract_id,
             contract_ids=contract_ids,
             top=top,
