@@ -1,0 +1,96 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial","fontSize":"15px","primaryColor":"#FFE600","primaryTextColor":"#2E2E38","primaryBorderColor":"#2E2E38","lineColor":"#747480","clusterBkg":"#F6F6FA","clusterBorder":"#C4C4CD","clusterTextColor":"#2E2E38","titleColor":"#2E2E38","nodeTextColor":"#2E2E38"}, "flowchart":{"rankSpacing":50,"nodeSpacing":30,"htmlLabels":true}}}%%
+flowchart TB
+
+  subgraph FE["🖥️ FRONTEND · React + TypeScript + Vite"]
+    direction LR
+    UI_CHAT["ChatArea<br/><i>thread · suggested Qs · streaming</i>"]
+    UI_SIDE["Sidebar<br/><i>sessions · contract filter</i>"]
+    UI_UP["UploadPanel<br/><i>drag-drop · progress poll</i>"]
+  end
+
+  subgraph API["⚡ FASTAPI · app/api.py"]
+    direction LR
+    EP_S["Session endpoints<br/><i>/sessions</i>"]
+    EP_A["Ask endpoint<br/><i>/sessions/{id}/ask</i>"]
+    EP_I["Ingest endpoints<br/><i>/ingest · async 202</i>"]
+  end
+
+  subgraph QP["🧠 QUERY PIPELINE · app/rag/"]
+    direction TB
+    ROUTER["LLM Router<br/><i>route · rewrite · scope (temp 0)</i>"]
+    subgraph RTS["Retrieval Routes"]
+      direction LR
+      R_S["🔍 search<br/><i>hybrid kw+vector</i>"]
+      R_G["🕸️ graph<br/><i>semantic facts</i>"]
+      R_H["⚡ hybrid<br/><i>search→graph</i>"]
+      R_T["🌲 tree<br/><i>vector + tree ctx</i>"]
+    end
+    ANSG["AnswerGenerator<br/><i>GPT-4 · grounded · cited (1200 tok)</i>"]
+  end
+
+  subgraph ING["📥 INGESTION PIPELINE"]
+    direction TB
+    JOBW["JobStore + Worker<br/><i>ThreadPool ×4 · queued→done</i>"]
+    subgraph SVC["IngestionService · app/services/"]
+      direction LR
+      DR["DocumentReader<br/><i>Doc Intelligence / pypdf</i>"]
+      TB["TreeBuilder<br/><i>PageIndex / headings</i>"]
+      CH["Chunker<br/><i>850w · 80w overlap</i>"]
+      IB["IndexBuilder<br/><i>embeddings</i>"]
+    end
+  end
+
+  subgraph KG["🔬 KNOWLEDGE GRAPH · offline"]
+    direction LR
+    KGN["normalize_tree<br/><i>nodes + edges</i>"]
+    KGE["legal_extractor<br/><i>parties · obligations · rights</i>"]
+    KGW["GremlinWriter"]
+  end
+
+  subgraph AZ["☁️ AZURE SERVICES"]
+    direction LR
+    BLOB["Blob Storage<br/><i>raw · tree.json · chunks · index_docs</i>"]
+    SRCH["AI Search<br/><i>1536-d HNSW · hybrid + semantic</i>"]
+    CNO["Cosmos NoSQL<br/><i>chat_sessions · ingest_jobs</i>"]
+    CGR["Cosmos Gremlin<br/><i>clauses · parties · obligations</i>"]
+    AOAI["Azure OpenAI<br/><i>gpt-4-mini · embed-3-small</i>"]
+  end
+
+  UI_CHAT --> EP_A
+  UI_SIDE --> EP_S
+  UI_UP --> EP_I
+
+  EP_A --> ROUTER
+  EP_S --> CNO
+  EP_I --> JOBW
+
+  ROUTER --> RTS
+  R_S --> SRCH
+  R_G --> CGR
+  R_H --> SRCH
+  R_H --> CGR
+  R_T --> BLOB
+  R_T --> SRCH
+  RTS --> ANSG
+  ANSG --> AOAI
+
+  JOBW --> BLOB
+  JOBW --> SVC
+  DR --> BLOB
+  TB --> BLOB
+  IB --> AOAI
+  JOBW --> SRCH
+  JOBW --> CNO
+
+  KGN --> BLOB
+  KGE --> AOAI
+  KGE --> KGW
+  KGN --> KGW
+  KGW --> CGR
+
+  classDef ey fill:#FFE600,stroke:#2E2E38,stroke-width:1.5px,color:#2E2E38;
+  classDef az fill:#2E2E38,stroke:#2E2E38,color:#FFFFFF;
+  classDef ans fill:#2E2E38,stroke:#FFE600,stroke-width:2.5px,color:#FFE600;
+  class UI_CHAT,UI_SIDE,UI_UP,EP_S,EP_A,EP_I,ROUTER,R_S,R_G,R_H,R_T,JOBW,DR,TB,CH,IB,KGN,KGE,KGW ey;
+  class BLOB,SRCH,CNO,CGR,AOAI az;
+  class ANSG ans;
