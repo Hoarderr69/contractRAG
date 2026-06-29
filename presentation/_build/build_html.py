@@ -80,7 +80,7 @@ img.arch{position:absolute;object-fit:contain;}
 <!-- 0 TITLE -->
 <section class="slide active"><div class="canvas title">
   <div class="beamA"></div><div class="beamB"></div>
-  <div class="logo" style="top:7%;left:4.4%"><div class="ey" style="color:#fff">EY</div><div class="beam"></div></div>
+  <div class="logo" style="top:7%;left:4.6%"><div class="beam" style="width:3.2vw;height:1.05vw"></div></div>
   <div class="tk0">CONTRACT INTELLIGENCE &nbsp;·&nbsp; AI / RAG &nbsp;·&nbsp; AZURE-NATIVE</div>
   <h1>Contract360</h1>
   <div class="lead">A retrieval-augmented assistant that answers natural-language questions over energy &amp; infrastructure contracts — with grounded, citation-backed answers.</div>
@@ -193,7 +193,7 @@ def header(kicker, title, pg):
     return (f'<div class="band"></div>'
             f'<div class="kicker">{kicker.upper()}</div>'
             f'<div class="htitle">{title}</div>'
-            f'<div class="logo" style="top:3.4%;right:3.5%"><div class="ey" style="color:#fff">EY</div><div class="beam"></div></div>'
+            f'<div class="logo" style="top:5.5%;right:3.5%"><div class="beam"></div></div>'
             f'<div class="foot">Contract360 &nbsp;|&nbsp; Confidential — for internal management review</div>'
             f'<div class="pg">{pg}</div>')
 

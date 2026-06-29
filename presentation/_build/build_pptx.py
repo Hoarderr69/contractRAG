@@ -76,19 +76,12 @@ def txt(slide, l, t, w, h, runs, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP,
 
 
 def ey_logo(slide, l, t, dark_bg=False, scale=1.0):
-    """EY wordmark: 'EY' + a yellow angled beam underneath."""
-    h = Inches(0.46 * scale); w = Inches(0.74 * scale)
-    tb = slide.shapes.add_textbox(l, t, w, h); tf = tb.text_frame
-    tf.margin_left = Pt(0); tf.margin_top = Pt(0); tf.margin_bottom = Pt(0)
-    p = tf.paragraphs[0]; p.alignment = PP_ALIGN.LEFT
-    r = p.add_run(); r.text = "EY"
-    r.font.size = Pt(26 * scale); r.font.bold = True; r.font.name = FONT
-    r.font.color.rgb = WHITE if dark_bg else EY_BLACK
-    beam = slide.shapes.add_shape(MSO_SHAPE.PARALLELOGRAM, l, t + Inches(0.40*scale),
-                                  Inches(0.66*scale), Inches(0.12*scale))
+    """Neutral yellow beam accent (no wordmark / no company name)."""
+    beam = slide.shapes.add_shape(MSO_SHAPE.PARALLELOGRAM, l, t + Inches(0.18*scale),
+                                  Inches(0.72*scale), Inches(0.14*scale))
     solid(beam, EY_YELLOW); no_shadow(beam)
     beam.adjustments[0] = 0.6
-    return tb
+    return beam
 
 
 def footer(slide, page):

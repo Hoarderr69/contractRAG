@@ -1,16 +1,16 @@
 # Contract360 — Manager Presentation
 
 A senior-management briefing deck for **Contract360**, generated from the `prod`
-branch `README.md` and `ARCHITECTURE.md`. EY-branded (yellow / black / grey / white).
+branch `README.md` and `ARCHITECTURE.md`. Corporate palette (yellow / black / grey / white).
 
 ## Deliverables
 
 | File | Use |
 |---|---|
-| `Contract360_Manager_Deck.pptx` | **Editable PowerPoint** — apply your EY corporate template/theme on top, or present as-is. Each slide has speaker notes. |
+| `Contract360_Manager_Deck.pptx` | **Editable PowerPoint** — apply your corporate template/theme on top, or present as-is. Each slide has speaker notes. |
 | `Contract360_Manager_Deck.html` | **Self-contained HTML deck** — double-click to open in any browser. No internet required (diagrams embedded). Arrow keys / Space to navigate, `F` for fullscreen. Use as the live deck or as a backup. |
 | `SPEAKER_NOTES.md` | Talk track, live-demo script, sample questions, and Q&A prep. |
-| `hl_arch.png` / `detail_arch.png` | Rendered architecture diagrams (EY-styled). |
+| `hl_arch.png` / `detail_arch.png` | Rendered architecture diagrams (on-brand styling). |
 
 ## Slide structure (per the brief)
 
@@ -27,9 +27,9 @@ branch `README.md` and `ARCHITECTURE.md`. EY-branded (yellow / black / grey / wh
 ## Before the meeting
 
 - **Insert the backup demo-video link** on Slide 3 (placeholder marked in yellow).
-- Drop in your official **EY logo** image if you have the asset (the deck uses a
-  text wordmark + yellow beam as a stand-in).
-- If your team has an official **EY .potx template**, open the `.pptx` in PowerPoint
+- Drop in your official **logo** image if you have the asset (the deck uses a neutral
+  yellow beam accent only — no company name is printed anywhere).
+- If your team has an official **.potx template**, open the `.pptx` in PowerPoint
   and apply it via *Design → Themes* — content is built with standard shapes/colors
   so it re-themes cleanly.
 
@@ -46,4 +46,4 @@ python _build/build_pptx.py    # → Contract360_Manager_Deck.pptx
 python _build/build_html.py    # → Contract360_Manager_Deck.html
 ```
 
-Brand palette: EY Yellow `#FFE600` · EY Black `#2E2E38` · Grey `#747480` · White.
+Brand palette: Yellow `#FFE600` · Black `#2E2E38` · Grey `#747480` · White.
