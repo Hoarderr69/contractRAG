@@ -9,14 +9,16 @@ branch `README.md` and `ARCHITECTURE.md`. Corporate palette (yellow / black / gr
 |---|---|
 | `Contract360_Manager_Deck.pptx` | **Editable PowerPoint** — apply your corporate template/theme on top, or present as-is. Each slide has speaker notes. |
 | `Contract360_Manager_Deck.html` | **Self-contained HTML deck** — double-click to open in any browser. No internet required (diagrams embedded). Arrow keys / Space to navigate, `F` for fullscreen. Use as the live deck or as a backup. |
+| `Contract360_Manager_Deck.pdf` | **PDF export** — 5 pages, 16:9 landscape. |
 | `SPEAKER_NOTES.md` | Talk track, live-demo script, sample questions, and Q&A prep. |
-| `hl_arch.png` / `detail_arch.png` | Rendered architecture diagrams (on-brand styling). |
+| `hl_overview.png` / `.svg` / `Contract360_Platform_Overview.pdf` | **Standalone high-level "how the platform works" diagram** (dark EY-template style, Graphviz). |
+| `detail_arch.png` | Detailed engineering architecture diagram. |
 
 ## Slide structure (per the brief)
 
 1. **Title** — Contract360
 2. **Slide 1 — Context:** problem, proposed solution, business value, tech stack
-3. **Slide 1 (cont.) — High-Level Architecture** diagram
+3. **Slide 1 (cont.) — How the Platform Works** (surface-level flow diagram, dark EY-template style)
 4. **Slide 2 — Detailed Architecture** diagram
 5. **Slide 3 — Demo** (flow, sample questions, backup-video reminder, roadmap)
 
@@ -38,12 +40,14 @@ branch `README.md` and `ARCHITECTURE.md`. Corporate palette (yellow / black / gr
 The deck is generated from scripts in `_build/`:
 
 ```bash
-pip install python-pptx Pillow
-# diagrams (needs Node + a Chromium):
-npx @mermaid-js/mermaid-cli -i _build/hl_arch.mmd     -o hl_arch.png     -b white -s 3
+pip install python-pptx Pillow img2pdf
+# high-level platform diagram (Graphviz):
+dot -Tpng -Gdpi=220 _build/hl_overview.dot -o hl_overview.png
+dot -Tsvg            _build/hl_overview.dot -o hl_overview.svg
+# detailed architecture (mermaid; needs Node + a Chromium):
 npx @mermaid-js/mermaid-cli -i _build/detail_arch.mmd -o detail_arch.png -b white -s 3
 python _build/build_pptx.py    # → Contract360_Manager_Deck.pptx
 python _build/build_html.py    # → Contract360_Manager_Deck.html
 ```
 
-Brand palette: Yellow `#FFE600` · Black `#2E2E38` · Grey `#747480` · White.
+Palette: Yellow `#FFE600` · Black `#2E2E38` · Navy `#1C1C3A` · Grey `#747480` · White.

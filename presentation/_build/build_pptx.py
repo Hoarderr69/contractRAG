@@ -15,6 +15,8 @@ OUT = os.path.join(HERE, "Contract360_Manager_Deck.pptx")
 # ---- EY brand palette ----
 EY_YELLOW = RGBColor(0xFF, 0xE6, 0x00)
 EY_BLACK  = RGBColor(0x2E, 0x2E, 0x38)   # EY "off-black"
+EY_NAVY   = RGBColor(0x1C, 0x1C, 0x3A)   # EY dark template background
+EY_NAVY2  = RGBColor(0x26, 0x26, 0x50)
 EY_GREY   = RGBColor(0x74, 0x74, 0x80)
 EY_LIGHT  = RGBColor(0xF2, 0xF2, 0xF5)   # card fill
 EY_LINE   = RGBColor(0xC4, 0xC4, 0xCD)
@@ -229,24 +231,36 @@ notes(s, "Problem: our key contracts are long, dense and high-stakes, and review
 
 # ============================================================== SLIDE 2 — HIGH-LEVEL ARCHITECTURE
 s = prs.slides.add_slide(BLANK)
-header(s, "Slide 1 (cont.) — How it works", "High-Level Architecture", 3)
-add_image_fit(s, os.path.join(HERE, "hl_arch.png"), Inches(0.55), Inches(1.5), Inches(12.25), Inches(4.45))
-# three takeaways strip
+# --- dark EY-template treatment for the platform-overview slide ---
+rect(s, 0, 0, SW, SH, EY_NAVY)
+# yellow title banner (tab) like the EY reference
+rect(s, Inches(0.55), Inches(0.42), Inches(6.5), Inches(0.72), EY_YELLOW)
+txt(s, Inches(0.75), Inches(0.52), Inches(6.2), Inches(0.55),
+    [[("How the Platform Works", 24, EY_BLACK, True, False)]])
+txt(s, Inches(0.57), Inches(1.22), Inches(11), Inches(0.35),
+    [[("HOW IT WORKS  ·  CONTRACT360", 11, EY_YELLOW, True, False)]])
+ey_logo(s, Inches(12.25), Inches(0.45), dark_bg=True, scale=0.85)
+add_image_fit(s, os.path.join(HERE, "hl_overview.png"), Inches(0.5), Inches(1.62), Inches(12.33), Inches(4.0))
+# three takeaways strip (light text on navy)
 ty = Inches(6.05)
-tk = [("INGEST ONCE", "Parse → tree → clause chunks + embeddings → searchable index."),
-      ("ROUTE EACH QUERY", "An LLM router picks tree, graph or hybrid retrieval per question."),
-      ("ANSWER, GROUNDED", "Azure OpenAI answers only from retrieved context — with citations.")]
+tk = [("PLAIN-LANGUAGE ACCESS", "Anyone can interrogate a contract — no legal training needed."),
+      ("GROUNDED & AUDITABLE", "Every answer cites the exact source clause it came from."),
+      ("AZURE-NATIVE", "Runs in our own cloud tenant — your data stays with you.")]
 cw = Inches(4.0); cl = Inches(0.55)
 for i,(h,b) in enumerate(tk):
     x = cl + i*(cw + Inches(0.21))
     rect(s, x, ty, Inches(0.07), Inches(0.78), EY_YELLOW)
     txt(s, x+Inches(0.18), ty, cw-Inches(0.2), Inches(0.8),
-        [[(h, 11, EY_BLACK, True, False)],[(b, 10, EY_GREY, False, False)]], space_after=2, line_spacing=1.0)
-notes(s, "Two pipelines over one shared Azure backbone. Ingestion runs once per contract: we parse the document, "
-        "build a hierarchical tree, create clause-aware chunks with embeddings, and index them — optionally extracting a "
-        "knowledge graph. At query time, an LLM router reads the question and picks the best retrieval strategy — tree "
-        "search, graph lookup, or a hybrid — then Azure OpenAI generates an answer using only what was retrieved, with "
-        "inline citations. Everything sits on Azure services we already operate.")
+        [[(h, 11, EY_YELLOW, True, False)],[(b, 10, RGBColor(0xCF,0xCF,0xDA), False, False)]], space_after=2, line_spacing=1.0)
+txt(s, Inches(0.55), Inches(7.06), Inches(8), Inches(0.3),
+    [[("Contract360  |  Confidential — for internal management review", 8.5, RGBColor(0x9A,0x9A,0xA6), False, False)]])
+txt(s, Inches(11.8), Inches(7.06), Inches(1.0), Inches(0.3),
+    [[("3", 9, RGBColor(0x9A,0x9A,0xA6), True, False)]], align=PP_ALIGN.RIGHT)
+notes(s, "Here's the whole platform in one picture. Two simple phases. ONBOARD, once per contract: you upload a PDF, "
+        "and the system reads it, splits it into clauses, and makes it searchable. ASK, anytime: you ask a question in "
+        "plain English, the AI finds the right clauses, and returns a clear answer with every point linked back to its "
+        "source clause. The whole thing runs on Azure services we already operate — so the data never leaves our tenant. "
+        "The detailed engineering view is on the next slide.")
 
 # ============================================================== SLIDE 3 — DETAILED ARCHITECTURE
 s = prs.slides.add_slide(BLANK)

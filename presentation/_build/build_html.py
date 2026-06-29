@@ -7,7 +7,7 @@ def b64(p):
     with open(os.path.join(HERE, p), "rb") as f:
         return "data:image/png;base64," + base64.b64encode(f.read()).decode()
 
-HL = b64("hl_arch.png")
+HL = b64("hl_overview.png")
 DET = b64("detail_arch.png")
 
 HTML = """<!DOCTYPE html>
@@ -73,6 +73,18 @@ img.arch{position:absolute;object-fit:contain;}
 .box h3{color:var(--yellow);font-size:1.35vw;margin-bottom:.5vw;}
 .box p{font-size:1.0vw;line-height:1.4;}
 .box .y{color:var(--yellow);font-style:italic;}
+/* dark EY-template slide */
+.canvas.dark{background:#1C1C3A;}
+.canvas.dark .banner{position:absolute;top:6%;left:4.1%;background:var(--yellow);color:var(--black);
+  font-weight:800;font-size:2.3vw;padding:.55vw 1.2vw;border-radius:2px;}
+.canvas.dark .kick2{position:absolute;top:2.6%;left:4.3%;color:var(--yellow);font-weight:700;
+  font-size:1.0vw;letter-spacing:.08em;}
+.canvas.dark .kick2{top:2.6%;}
+.tk.d h4{color:var(--yellow);}
+.tk.d p{color:#CFCFDA;}
+.tk.d:before{background:var(--yellow);}
+.foot.d{position:absolute;bottom:2.4%;left:4.1%;color:#9A9AA6;font-size:.92vw;}
+.pg.d{position:absolute;bottom:2.4%;right:4.1%;color:#9A9AA6;font-size:.95vw;font-weight:700;}
 </style></head>
 <body>
 <div class="deck">
@@ -117,13 +129,17 @@ img.arch{position:absolute;object-fit:contain;}
   </div>
 </div></section>
 
-<!-- 2 HL ARCH -->
-<section class="slide"><div class="canvas">
-  __HEADER__('Slide 1 (cont.) — How it works','High-Level Architecture','3')
-  <img class="arch" src="__HL__" style="left:4.1%;top:18.5%;width:91.8%;height:58%"/>
-  <div class="tk"   style="left:4.1%;top:80%;width:29%"><h4>INGEST ONCE</h4><p>Parse → tree → clause chunks + embeddings → searchable index.</p></div>
-  <div class="tk"   style="left:35.5%;top:80%;width:29%"><h4>ROUTE EACH QUERY</h4><p>An LLM router picks tree, graph or hybrid retrieval per question.</p></div>
-  <div class="tk"   style="left:67%;top:80%;width:29%"><h4>ANSWER, GROUNDED</h4><p>Azure OpenAI answers only from retrieved context — with citations.</p></div>
+<!-- 2 HL ARCH (dark EY template) -->
+<section class="slide"><div class="canvas dark">
+  <div class="kick2">HOW IT WORKS &nbsp;·&nbsp; CONTRACT360</div>
+  <div class="banner">How the Platform Works</div>
+  <div class="logo" style="top:4%;right:3.5%"><div class="beam"></div></div>
+  <img class="arch" src="__HL__" style="left:3.5%;top:20%;width:93%;height:58%"/>
+  <div class="tk d" style="left:4.1%;top:81%;width:29%"><h4>PLAIN-LANGUAGE ACCESS</h4><p>Anyone can interrogate a contract — no legal training needed.</p></div>
+  <div class="tk d" style="left:35.5%;top:81%;width:29%"><h4>GROUNDED &amp; AUDITABLE</h4><p>Every answer cites the exact source clause it came from.</p></div>
+  <div class="tk d" style="left:67%;top:81%;width:29%"><h4>AZURE-NATIVE</h4><p>Runs in our own cloud tenant — your data stays with you.</p></div>
+  <div class="foot d">Contract360 &nbsp;|&nbsp; Confidential — for internal management review</div>
+  <div class="pg d">3</div>
 </div></section>
 
 <!-- 3 DETAIL ARCH -->

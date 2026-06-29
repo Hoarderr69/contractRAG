@@ -1,0 +1,79 @@
+digraph Contract360 {
+  rankdir=LR;
+  bgcolor="#1C1C3A";
+  fontname="Arial";
+  compound=true;
+  splines=ortho;
+  nodesep=0.45;
+  ranksep=0.85;
+  pad=0.35;
+
+  node  [shape=plaintext, fontname="Arial", fontcolor="white"];
+  edge  [color="#FFE600", penwidth=3.2, arrowsize=1.1, arrowhead=vee,
+         fontname="Arial", fontsize=15, fontcolor="#FFFFFF"];
+
+  // ---------- helper icon nodes ----------
+  user    [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="46">🧑‍💼</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="16" COLOR="#FFFFFF"><B>User</B></FONT></TD></TR></TABLE>>];
+
+  contract [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+            <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="44">📄</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Contract</B></FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">PDF · EPC / O&amp;M / PPA</FONT></TD></TR></TABLE>>];
+
+  answer  [label=<<TABLE BORDER="1" COLOR="#FFE600" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" BGCOLOR="#262650" STYLE="ROUNDED">
+            <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">✅</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="15" COLOR="#FFE600"><B>Grounded answer</B></FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="11" COLOR="#D9D9E4">every point cites<BR/>its source clause</FONT></TD></TR></TABLE>>];
+
+  // ---------- KNOWLEDGE BASE (top) ----------
+  subgraph cluster_kb {
+    label=<<FONT POINT-SIZE="17" COLOR="#FFE600"><B>  KNOWLEDGE BASE  </B></FONT>>;
+    labelloc="t";
+    style="dashed,rounded";
+    color="#FFE600";
+    penwidth=2.2;
+    margin=18;
+
+    search [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
+             <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🔎</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>AI Search</B></FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">clause index<BR/>(vector + keyword)</FONT></TD></TR></TABLE>>];
+
+    store  [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
+             <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🗄️</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Blob + Cosmos</B></FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">files, clauses<BR/>&amp; chat history</FONT></TD></TR></TABLE>>];
+  }
+
+  // ---------- CONTRACT360 ASSISTANT (bottom) ----------
+  subgraph cluster_asst {
+    label=<<FONT POINT-SIZE="17" COLOR="#FFE600"><B>  CONTRACT360 ASSISTANT  </B></FONT>>;
+    labelloc="t";
+    style="dashed,rounded";
+    color="#FFE600";
+    penwidth=2.2;
+    margin=18;
+
+    chat [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
+            <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">💬</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Chat</B></FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">plain-English Q&amp;A</FONT></TD></TR></TABLE>>];
+
+    llm  [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
+            <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🤖</FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Azure OpenAI</B></FONT></TD></TR>
+            <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">routes · reads<BR/>· writes answer</FONT></TD></TR></TABLE>>];
+  }
+
+  // ---------- flow ----------
+  contract -> store  [lhead=cluster_kb, label="  Upload\n  & index  "];
+  user -> chat       [lhead=cluster_asst, label="Ask  "];
+  chat -> llm        [dir=both, color="#9A9AA6", penwidth=2.4];
+  llm -> search      [ltail=cluster_asst, lhead=cluster_kb, dir=both, label="  Retrieve\n  clauses  "];
+  llm -> answer      [ltail=cluster_asst, label="  Answer  "];
+
+  // keep KB above assistant
+  search -> chat [style=invis];
+}
