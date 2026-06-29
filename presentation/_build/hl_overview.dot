@@ -38,13 +38,13 @@ digraph Contract360 {
 
     search [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
              <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🔎</FONT></TD></TR>
-             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>AI Search</B></FONT></TD></TR>
-             <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">clause index<BR/>(vector + keyword)</FONT></TD></TR></TABLE>>];
+             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Clause search</B></FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">finds the exact<BR/>wording in the text</FONT></TD></TR></TABLE>>];
 
-    store  [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
-             <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🗄️</FONT></TD></TR>
-             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Blob + Cosmos</B></FONT></TD></TR>
-             <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">files, clauses<BR/>&amp; chat history</FONT></TD></TR></TABLE>>];
+    kgraph [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
+             <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🕸️</FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Knowledge graph</B></FONT></TD></TR>
+             <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">obligations, parties,<BR/>deadlines &amp; links</FONT></TD></TR></TABLE>>];
   }
 
   // ---------- CONTRACT360 ASSISTANT (bottom) ----------
@@ -64,14 +64,14 @@ digraph Contract360 {
     llm  [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3">
             <TR><TD><FONT FACE="Noto Color Emoji" POINT-SIZE="40">🤖</FONT></TD></TR>
             <TR><TD><FONT POINT-SIZE="15" COLOR="#FFFFFF"><B>Azure OpenAI</B></FONT></TD></TR>
-            <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">routes · reads<BR/>· writes answer</FONT></TD></TR></TABLE>>];
+            <TR><TD><FONT POINT-SIZE="11" COLOR="#B9B9C9">picks the right source<BR/>· writes the answer</FONT></TD></TR></TABLE>>];
   }
 
   // ---------- flow ----------
-  contract -> store  [lhead=cluster_kb, label="  Upload\n  & index  "];
+  contract -> kgraph [lhead=cluster_kb, label="  Upload\n  & index  "];
   user -> chat       [lhead=cluster_asst, label="Ask  "];
   chat -> llm        [dir=both, color="#9A9AA6", penwidth=2.4];
-  llm -> search      [ltail=cluster_asst, lhead=cluster_kb, dir=both, label="  Retrieve\n  clauses  "];
+  llm -> search      [ltail=cluster_asst, lhead=cluster_kb, dir=both, label="  Smart\n  retrieval  "];
   llm -> answer      [ltail=cluster_asst, label="  Answer  "];
 
   // keep KB above assistant
