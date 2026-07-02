@@ -23,7 +23,8 @@ import math
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.kg.gremlin_writer import GremlinWriter
+from app.kg.gremlin_writer import GremlinWriter, gremlin_is_configured
+from app.kg.local_graph_store import LocalGraphStore, get_local_graph_store
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,18 @@ _GRAPH_INTENTS: List[Dict] = [
             "shared parties across contracts",
             "cross-contract obligations",
             "portfolio-wide analysis",
+        ],
+    },
+    {
+        "name": "obligation_burden",
+        "description": "Questions asking which party carries the most obligations, obligation imbalance, who bears the heaviest contractual burden, or comparative obligation counts between parties.",
+        "examples": [
+            "which party has the most obligations?",
+            "who bears the most obligation burden?",
+            "does the contractor carry more obligations than the owner?",
+            "obligation imbalance between parties",
+            "compare obligation load across contracts",
+            "which party role carries the most duties?",
         ],
     },
 ]
@@ -750,8 +763,12 @@ def _format_facts(
             lines.append(f"     Indemnitor: {fact['indemnitor']}  →  Indemnitee: {fact.get('indemnitee', '?')}")
         if fact.get("recipient"):
             lines.append(f"     Notice recipient: {fact['recipient']}")
+        if fact.get("responsibleParty"):
+            lines.append(f"     Responsible party: {fact['responsibleParty']}")
         if fact.get("deadlineName"):
             lines.append(f"     Deadline: {fact.get('deadlineName')}")
+        if fact.get("deadlineEvidence") and fact.get("deadlineEvidence") != fact.get("evidenceQuote"):
+            lines.append(f"     Deadline evidence: \"{fact.get('deadlineEvidence')}\"")
         if fact.get("evidenceQuote"):
             lines.append(f"     Evidence: \"{fact.get('evidenceQuote')}\"")
         # Citation metadata denormalized onto each entity (no structural vertex lookup)
@@ -877,9 +894,9 @@ def graph_native_retrieve(
     contract_ids: Optional[List[str]] = None,
 ) -> str:
     """
-    Route graph questions to the right Gremlin query pattern.
-    Covers the full canonical ontology: obligations, rights, restrictions,
-    indemnity, termination, breach/cure, notice, payment, liability.
+    Route graph questions to the right query pattern.
+    Uses Cosmos Gremlin when configured, falls back to local in-memory graph
+    built from data/kg/extractions/ when Gremlin credentials are absent.
     """
     q = question.lower()
 
@@ -892,7 +909,11 @@ def graph_native_retrieve(
     multi     = scope_ids is not None and len(scope_ids) > 1
     portfolio = scope_ids is None
 
-    retriever = GraphNativeRetriever()
+    retriever: "GraphNativeRetriever | LocalGraphRetriever"
+    if gremlin_is_configured():
+        retriever = GraphNativeRetriever()
+    else:
+        retriever = LocalGraphRetriever()
     try:
         party = extract_party(question)
 
@@ -925,6 +946,15 @@ def graph_native_retrieve(
         # ── Semantic intent classification → fetch → format ───────────────────
         intent, score = _classify_intent(question)
         logger.info("Graph intent: %s (score=%.3f)", intent, score)
+
+        # Obligation-burden analysis: pre-aggregate at graph level (avoids
+        # dumping hundreds of raw facts into the LLM context).
+        if intent == "obligation_burden" and isinstance(retriever, LocalGraphRetriever):
+            context = retriever._store.get_obligation_burden_analysis(
+                contract_id=contract_id,
+                contract_ids=scope_ids,
+            )
+            return context
 
         # Cross-contract / shared-party intent
         if intent == "cross_contract" or (portfolio and party is None):
@@ -971,6 +1001,69 @@ def graph_native_retrieve(
 
     finally:
         retriever.close()
+
+
+# ── LocalGraphRetriever — same public API, backed by LocalGraphStore ───────────
+
+class LocalGraphRetriever:
+    """
+    Wraps LocalGraphStore with the same interface as GraphNativeRetriever so
+    graph_native_retrieve() can call either without knowing which backend is live.
+    """
+
+    def __init__(self):
+        self._store: LocalGraphStore = get_local_graph_store()
+
+    def close(self):
+        pass  # nothing to close for an in-memory store
+
+    def get_all_obligations(self, **kw) -> List[Dict]:
+        return self._store.get_all_obligations(**kw)
+
+    def get_obligations_by_party(self, party_name: str, **kw) -> List[Dict]:
+        return self._store.get_obligations_by_party(party_name, **kw)
+
+    def get_obligations_owed_to_party(self, party_name: str, **kw) -> List[Dict]:
+        return self._store.get_obligations_owed_to_party(party_name, **kw)
+
+    def get_obligations_with_deadlines(self, **kw) -> List[Dict]:
+        return self._store.get_obligations_with_deadlines(**kw)
+
+    def get_rights(self, **kw) -> List[Dict]:
+        return self._store.get_rights(**kw)
+
+    def get_restrictions(self, **kw) -> List[Dict]:
+        return self._store.get_restrictions(**kw)
+
+    def get_indemnity_facts(self, **kw) -> List[Dict]:
+        return self._store.get_indemnity_facts(**kw)
+
+    def get_termination_facts(self, **kw) -> List[Dict]:
+        return self._store.get_termination_facts(**kw)
+
+    def get_breach_cure_facts(self, **kw) -> List[Dict]:
+        return self._store.get_breach_cure_facts(**kw)
+
+    def get_notice_facts(self, **kw) -> List[Dict]:
+        return self._store.get_notice_facts(**kw)
+
+    def get_payment_facts(self, **kw) -> List[Dict]:
+        return self._store.get_payment_facts(**kw)
+
+    def get_liability_facts(self, **kw) -> List[Dict]:
+        return self._store.get_liability_facts(**kw)
+
+    def get_shared_parties(self, contract_ids=None) -> Dict[str, List[str]]:
+        return self._store.get_shared_parties(contract_ids=contract_ids)
+
+    def get_obligations_grouped_by_contract(self, contract_ids=None) -> Dict[str, List[Dict]]:
+        return self._store.get_obligations_grouped_by_contract(contract_ids=contract_ids)
+
+    def get_deadlines_grouped_by_contract(self, contract_ids=None) -> Dict[str, List[Dict]]:
+        return self._store.get_deadlines_grouped_by_contract(contract_ids=contract_ids)
+
+    def _group_by_contract(self, items: List[Dict]) -> Dict[str, List[Dict]]:
+        return self._store._group_by_contract(items)
 
 
 def _intent_to_fetcher(intent: str, retriever: "GraphNativeRetriever", party: Optional[str]) -> Callable:

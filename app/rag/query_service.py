@@ -25,6 +25,7 @@ from app.services.prompt_builder import build_rag_prompt
 from app.storage.artifact_store import get_artifact_store
 from app.tree.semantic_retriever import SemanticRetriever
 from app.kg.gremlin_writer import contract_has_graph, gremlin_is_configured
+from app.kg.local_graph_store import get_local_graph_store
 
 logger = logging.getLogger(__name__)
 
@@ -573,28 +574,41 @@ def _ground_and_generate(
 
 def _graph_retrieve(question: str, contract_id: Optional[str],
                     contract_ids: Optional[List[str]]):
-    """Smart canonical-anchored graph retrieval, falling back to legacy template retriever."""
-    ctx, facts = canonical_graph_retrieve(
-        question, contract_id=contract_id, contract_ids=contract_ids,
-        search_anchor_fn=_make_search_anchor(),
-    )
-    if ctx and ctx.strip():
-        return ctx, _graph_facts_to_citations(facts)
+    """Graph retrieval: canonical (Gremlin) when available, local store otherwise."""
+    if gremlin_is_configured():
+        try:
+            ctx, facts = canonical_graph_retrieve(
+                question, contract_id=contract_id, contract_ids=contract_ids,
+                search_anchor_fn=_make_search_anchor(),
+            )
+            if ctx and ctx.strip():
+                return ctx, _graph_facts_to_citations(facts)
+        except Exception as exc:
+            logger.warning("Canonical graph retrieval failed (%s) — falling back.", exc)
+
     legacy = graph_native_retrieve(question, contract_id=contract_id, contract_ids=contract_ids)
     return legacy, []
 
 def _graph_available(contract_id: Optional[str], contract_ids: Optional[List[str]]) -> bool:
-    if contract_ids and len(contract_ids) > 1:
-        return gremlin_is_configured()
-    if not contract_id and not contract_ids:
-        return gremlin_is_configured()
-    cid = contract_id or (contract_ids[0] if contract_ids else None)
-    if not cid:
-        return False
     if gremlin_is_configured():
-        return contract_has_graph(cid)
-    _store = get_artifact_store()
-    return _store.kg_exists(cid)
+        # Cloud path: for multi-contract or portfolio, Gremlin is enough.
+        if contract_ids and len(contract_ids) > 1:
+            return True
+        if not contract_id and not contract_ids:
+            return True
+        cid = contract_id or (contract_ids[0] if contract_ids else None)
+        return bool(cid and contract_has_graph(cid))
+
+    # Local path: check in-memory store (loaded from data/kg/extractions/).
+    local = get_local_graph_store()
+    if not local.has_any_data():
+        return False
+    if contract_ids and len(contract_ids) > 1:
+        return local.kg_exists_any(contract_ids)
+    if not contract_id and not contract_ids:
+        return local.has_any_data()
+    cid = contract_id or (contract_ids[0] if contract_ids else None)
+    return bool(cid and local.kg_exists(cid))
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────
