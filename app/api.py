@@ -569,18 +569,35 @@ class ContractSummary(BaseModel):
     displayName: str
 
 
+_searcher: Optional[AzureSearchTester] = None
+
+def _get_searcher() -> AzureSearchTester:
+    global _searcher
+    if _searcher is None:
+        _searcher = AzureSearchTester()
+    return _searcher
+
+
 @app.get("/contracts")
 def list_contracts() -> List[ContractSummary]:
     """Return all contract IDs currently indexed in Azure AI Search."""
-    searcher = AzureSearchTester()
-    ids = searcher.list_contract_ids()
-    return [
-        ContractSummary(
-            id=cid,
-            displayName=cid.replace("_", " "),
-        )
-        for cid in ids
-    ]
+    last_exc = None
+    for attempt in range(3):
+        try:
+            ids = _get_searcher().list_contract_ids()
+            return [
+                ContractSummary(
+                    id=cid,
+                    displayName=cid.replace("_", " "),
+                )
+                for cid in ids
+            ]
+        except Exception as exc:
+            last_exc = exc
+            # Stale connection — force a fresh client on next attempt
+            global _searcher
+            _searcher = None
+    raise HTTPException(status_code=503, detail=f"Azure Search unavailable: {last_exc}")
 
 
 @app.delete("/contracts/{contract_id}")

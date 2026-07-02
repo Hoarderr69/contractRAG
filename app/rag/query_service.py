@@ -77,6 +77,24 @@ def _is_structure_query(question: str) -> bool:
 _tree_store = None
 _TREE_CACHE: Dict[str, Optional[Dict]] = {}
 
+# Cached Azure Search client — avoids creating a new HTTP client per request,
+# which was causing stale-connection resets (ConnectionResetError 10054).
+_searcher_instance: Optional[AzureSearchTester] = None
+
+
+def _get_searcher() -> AzureSearchTester:
+    global _searcher_instance
+    if _searcher_instance is None:
+        _searcher_instance = AzureSearchTester()
+    return _searcher_instance
+
+
+def _fresh_searcher() -> AzureSearchTester:
+    """Force a new AzureSearchTester (call after a connection reset)."""
+    global _searcher_instance
+    _searcher_instance = AzureSearchTester()
+    return _searcher_instance
+
 
 def _load_tree(contract_id: str) -> Optional[Dict]:
     """
@@ -373,14 +391,22 @@ def _tree_retrieve(
 ) -> Tuple[str, List[Dict]]:
     """Returns (context_string, citations)."""
     if structural_scope:
-        searcher = AzureSearchTester()
-        docs = searcher.retrieve_structural_scope(
-            structure_type=structural_scope["type"],
-            identifier=structural_scope["identifier"],
-            contract_id=contract_id,
-            contract_ids=contract_ids,
-            top=100,
-        )
+        for attempt in range(2):
+            try:
+                docs = _get_searcher().retrieve_structural_scope(
+                    structure_type=structural_scope["type"],
+                    identifier=structural_scope["identifier"],
+                    contract_id=contract_id,
+                    contract_ids=contract_ids,
+                    top=100,
+                )
+                break
+            except Exception as exc:
+                if attempt == 0:
+                    logger.warning("Azure Search reset on structural scope — retrying. %s", exc)
+                    _fresh_searcher()
+                else:
+                    raise
         return _format_search_docs(docs), _docs_to_citations(docs)
 
     # Normalise: treat empty list same as None (portfolio-wide)
@@ -394,13 +420,21 @@ def _tree_retrieve(
             context = build_rag_prompt(query=question, retrieved_chunks=chunks)
             return context, _chunks_to_citations(chunks)
 
-    searcher = AzureSearchTester()
-    docs = searcher.hybrid_search(
-        query=question,
-        contract_id=contract_id,
-        contract_ids=contract_ids,
-        top=top,
-    )
+    for attempt in range(2):
+        try:
+            docs = _get_searcher().hybrid_search(
+                query=question,
+                contract_id=contract_id,
+                contract_ids=contract_ids,
+                top=top,
+            )
+            break
+        except Exception as exc:
+            if attempt == 0:
+                logger.warning("Azure Search reset on hybrid_search — retrying. %s", exc)
+                _fresh_searcher()
+            else:
+                raise
 
     # Title-boost: for a single-contract scope, recover specific named sections
     # (e.g. a numbers table) that vector ranking buries. Gated + deduped, then
@@ -477,8 +511,7 @@ def _make_search_anchor():
     """Phase-2 bridge: vector/keyword search → relevant clause ids for graph anchoring."""
     def _anchor(question: str, scope: Optional[List[str]]) -> List[str]:
         try:
-            searcher = AzureSearchTester()
-            docs = searcher.hybrid_search(query=question, contract_ids=scope, top=8)
+            docs = _get_searcher().hybrid_search(query=question, contract_ids=scope, top=8)
             return [d.get("kgId") for d in docs if d.get("kgId")]
         except Exception:
             return []
@@ -597,18 +630,27 @@ def _graph_available(contract_id: Optional[str], contract_ids: Optional[List[str
         if not contract_id and not contract_ids:
             return True
         cid = contract_id or (contract_ids[0] if contract_ids else None)
-        return bool(cid and contract_has_graph(cid))
+        result = bool(cid and contract_has_graph(cid))
+        logger.info("graph_available(gremlin): cid=%s → %s", cid, result)
+        return result
 
     # Local path: check in-memory store (loaded from data/kg/extractions/).
     local = get_local_graph_store()
     if not local.has_any_data():
+        logger.warning("graph_available(local): store is empty — no extractions loaded")
         return False
     if contract_ids and len(contract_ids) > 1:
-        return local.kg_exists_any(contract_ids)
+        result = local.kg_exists_any(contract_ids)
+        logger.info("graph_available(local): multi-contract %s → %s", contract_ids, result)
+        return result
     if not contract_id and not contract_ids:
-        return local.has_any_data()
+        logger.info("graph_available(local): portfolio scope → True (%d entities)", len(local._entities))
+        return True
     cid = contract_id or (contract_ids[0] if contract_ids else None)
-    return bool(cid and local.kg_exists(cid))
+    result = bool(cid and local.kg_exists(cid))
+    logger.info("graph_available(local): cid=%r known_contracts=%s → %s",
+                cid, local.list_contracts(), result)
+    return result
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────
@@ -646,9 +688,10 @@ def answer_question(
         candidate_pool = [contract_id]
     else:
         try:
-            candidate_pool = AzureSearchTester().list_contract_ids()
+            candidate_pool = _get_searcher().list_contract_ids()
         except Exception as exc:
             logger.warning("Contract resolver: could not list contracts (%s).", exc)
+            _fresh_searcher()
             candidate_pool = []
 
     resolved_ids, scope_reason = resolve_scope(question, candidate_pool)
@@ -753,7 +796,8 @@ def answer_question(
         # may have only a partial graph (or none for some topics), and tree
         # search almost always has the underlying clause text.
         if _context_is_thin(context):
-            logger.info("Graph context thin — falling back to tree retrieval.")
+            logger.warning("Graph context thin (len=%d) — falling back to tree retrieval. context[:200]=%r",
+                           len(context or ""), (context or "")[:200])
             context, citations = _tree_retrieve(
                 question=retrieval_query,
                 contract_id=contract_id,
